@@ -1,0 +1,33 @@
+; Program name
+.program composite_out
+
+composite_out_start:
+.wrap_target
+	pull block				; Pull color value
+	out pins, 8
+.wrap
+
+
+% c-sdk {
+static inline void composite_out_program_init(PIO pio, uint sm, uint offset, uint pin_base, uint pin_count, float freq) {
+
+    pio_sm_config c = composite_out_program_get_default_config(offset);
+
+    sm_config_set_out_pins(&c, pin_base, pin_count);
+
+    float clkdiv = clock_get_hz(clk_sys) / (2 * freq);
+    printf("clkdiv = %d.%03d\n", (int)clkdiv, (int)(1000 * (clkdiv - (int)clkdiv)));
+    sm_config_set_clkdiv(&c, clkdiv);
+
+    for(int i = pin_base; i < pin_base + pin_count; i++)
+    {
+        pio_gpio_init(pio, i);
+    }
+    
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_base, pin_count, true);
+
+    pio_sm_init(pio, sm, offset, &c);
+
+    // pio_sm_set_enabled(pio, sm, true);
+}
+%}
