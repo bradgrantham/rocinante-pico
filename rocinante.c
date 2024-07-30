@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 #include "pico/binary_info.h"
@@ -18,13 +19,23 @@ const uint32_t NTSC_PIN_BASE = 2;
 const uint32_t NTSC_PIN_COUNT = 8;
 
 volatile int frame_number = 0;
+volatile int row_number = 0;
 int irq_dma_chan;
 const void* buffer_start;
+
+uint8_t rowsamples[2][912];
+void *next_scanout_buffer;
 
 void __isr dma_handler()
 {
     dma_hw->ints0 = 1u << irq_dma_chan;
-    frame_number++;
+    row_number++;
+    if(row_number >= 525) {
+        row_number = 0;
+        frame_number++;
+    }
+    next_scanout_buffer = rowsamples[(row_number + 1) % 2];
+    memcpy(next_scanout_buffer, buffer + row_number * 912, 912);
 }
 
 int main()
@@ -75,15 +86,8 @@ int main()
         }
     }
 
-#if 0
-    const void* src = buffer;
-    size_t size = 912 * 525;
-    uint32_t freq_needed = 14794309; // correction for weird timing I see, was // 14318180;
-#else
-    const void* src = scaled;
-    size_t size = 228 * 525;
-    uint32_t freq_needed = 3698577; // correction, was // 3579545;
-#endif
+    size_t size = 912;
+    uint32_t freq_needed = 14318180 ; // 14493570 ; // 14794309; // correction for weird timing I see, was // 14318180;
 
     // Set processor clock to 128.863620 and then clock out a value
     // every 9 cycles?  O_o  Probably no better than setting PIO to 14.31818 * 2
@@ -93,7 +97,6 @@ int main()
         gpio_set_slew_rate(i, GPIO_SLEW_RATE_FAST);
         gpio_set_drive_strength(i, GPIO_DRIVE_STRENGTH_8MA);
     }
-    // set slew rate to high
 
     // Set up PIO program for composite_out
     PIO pio = pio0;
@@ -105,8 +108,8 @@ int main()
     uint transfer_enum = DMA_SIZE_8;
     int transfer_size = 1;
 
-    int stream_chan = irq_dma_chan = dma_claim_unused_channel(true);
-    int restart_chan = dma_claim_unused_channel(true);
+    int stream_chan = dma_claim_unused_channel(true);
+    int restart_chan = irq_dma_chan = dma_claim_unused_channel(true);
 
     dma_channel_config stream_config = dma_channel_get_default_config(stream_chan);
     channel_config_set_transfer_data_size(&stream_config, transfer_enum);
@@ -120,7 +123,6 @@ int main()
     channel_config_set_transfer_data_size(&restart_config, DMA_SIZE_32);
     channel_config_set_read_increment(&restart_config, false);
     channel_config_set_write_increment(&restart_config, false);
-    // channel_config_set_dreq(&restart_config, pio_get_dreq(pio, sm, true));
     channel_config_set_chain_to(&restart_config, stream_chan);
     if(true) channel_config_set_chain_to(&stream_config, restart_chan);
 
@@ -128,22 +130,24 @@ int main()
         stream_chan,           // DMA channel
         &stream_config,             // channel_config
         &pio->txf[sm],  // write address
-        buffer_start = src,            // read address
+        rowsamples[0],            // read address
         size / transfer_size,  // size of frame in transfers
         false           // don't start 
     );
 
-    const void *address_pointer = src;
+    next_scanout_buffer = rowsamples[1];
+
     dma_channel_configure(
         restart_chan,           // DMA channel
         &restart_config,             // channel_config
         &dma_hw->ch[stream_chan].read_addr,  // write address
-        &address_pointer,            // read address
+        &next_scanout_buffer,            // read address
         1,  // size of frame in transfers
         false           // don't start 
     );
 
-    dma_channel_set_irq0_enabled(stream_chan, true);
+
+    dma_channel_set_irq0_enabled(restart_chan, true);
     irq_set_exclusive_handler(DMA_IRQ_0, dma_handler);
     irq_set_enabled(DMA_IRQ_0, true);
 
@@ -158,7 +162,7 @@ int main()
     uint64_t started_us = to_us_since_boot (started);
     while(1)
     {
-        sleep_ms(5);
+        sleep_ms(1);
         if(previous_frame + 30 < frame_number)
         {
             absolute_time_t ended = get_absolute_time();
