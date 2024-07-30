@@ -7,7 +7,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 pico_sdk_init()
 
-add_executable(rocinante rocinante.c frame.c)
+add_executable(rocinante rocinante.c zaxxon.c frame.c)
 
 pico_generate_pio_header(rocinante ${CMAKE_CURRENT_LIST_DIR}/rocinante.pio)
 

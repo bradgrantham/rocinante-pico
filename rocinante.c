@@ -201,15 +201,15 @@ uint8_t NTSCColorburst300;
 
 NTSCModeTiming NTSCTiming912, NTSCTiming1368;
 
-void NTSCCalculateLineClocks(NTSCModeTiming* clocks, int samples)
+void NTSCCalculateLineClocks(NTSCModeTiming* timing, int samples)
 {
-    clocks->line_clocks = samples;
-    clocks->hsync = floorf(clocks->line_clocks * NTSC_HOR_SYNC_DUR + 0.5);
-    clocks->front_porch = clocks->line_clocks * NTSC_FRONTPORCH;
-    clocks->back_porch = clocks->line_clocks * NTSC_BACKPORCH;
-    clocks->eq_pulse = clocks->line_clocks * NTSC_EQ_PULSE_INTERVAL;
-    clocks->vsync = clocks->line_clocks * NTSC_VSYNC_BLANK_INTERVAL;
-    clocks->colorburst_offset = (samples == 912) ? 76 : 114; // Magic numbers preventing generalization
+    timing->line_clocks = samples;
+    timing->hsync = floorf(timing->line_clocks * NTSC_HOR_SYNC_DUR + 0.5);
+    timing->front_porch = timing->line_clocks * NTSC_FRONTPORCH;
+    timing->back_porch = timing->line_clocks * NTSC_BACKPORCH;
+    timing->eq_pulse = timing->line_clocks * NTSC_EQ_PULSE_INTERVAL;
+    timing->vsync = timing->line_clocks * NTSC_VSYNC_BLANK_INTERVAL;
+    timing->colorburst_offset = (samples == 912) ? 76 : 114; // Magic numbers preventing generalization
 }
 
 void NTSCCalculateParameters()
@@ -239,10 +239,10 @@ void NTSCCalculateParameters()
     NTSCColorburst300 = NTSCSyncPorch + .866 * .6 * NTSCSyncPorch;
 }
 
-void NTSCFillEqPulseLine(NTSCModeTiming *clocks, unsigned char *rowBuffer)
+void NTSCFillEqPulseLine(NTSCModeTiming *timing, unsigned char *rowBuffer)
 {
-    for (int col = 0; col < clocks->line_clocks; col++) {
-        if (col < clocks->eq_pulse || (col > clocks->line_clocks/2 && col < clocks->line_clocks/2 + clocks->eq_pulse)) {
+    for (int col = 0; col < timing->line_clocks; col++) {
+        if (col < timing->eq_pulse || (col > timing->line_clocks/2 && col < timing->line_clocks/2 + timing->eq_pulse)) {
             rowBuffer[col] = NTSCSyncTip;
         } else {
             rowBuffer[col] = NTSCSyncPorch;
@@ -250,10 +250,10 @@ void NTSCFillEqPulseLine(NTSCModeTiming *clocks, unsigned char *rowBuffer)
     }
 }
 
-void NTSCFillVSyncLine(NTSCModeTiming *clocks, unsigned char *rowBuffer)
+void NTSCFillVSyncLine(NTSCModeTiming *timing, unsigned char *rowBuffer)
 {
-    for (int col = 0; col < clocks->line_clocks; col++) {
-        if (col < clocks->vsync || (col > clocks->line_clocks/2 && col < clocks->line_clocks/2 + clocks->vsync)) {
+    for (int col = 0; col < timing->line_clocks; col++) {
+        if (col < timing->vsync || (col > timing->line_clocks/2 && col < timing->line_clocks/2 + timing->vsync)) {
             rowBuffer[col] = NTSCSyncTip;
         } else {
             rowBuffer[col] = NTSCSyncPorch;
@@ -265,9 +265,9 @@ void NTSCAddColorburst(NTSCModeTiming* timing, unsigned char *rowBuffer, int row
 {
     int startOfColorburstClocks = timing->colorburst_offset;
 
-    for(int col = startOfColorburstClocks; col < startOfColorburstClocks + NTSC_COLORBURST_CYCLES * 4; col++)
+    if(timing->line_clocks == 912) 
     {
-        if(timing->line_clocks == 912) 
+        for(int col = startOfColorburstClocks; col < startOfColorburstClocks + NTSC_COLORBURST_CYCLES * 4; col++)
         {
             switch((col - startOfColorburstClocks) % 4) {
                 case 0: rowBuffer[col] = NTSCColorburst0; break;
@@ -276,7 +276,10 @@ void NTSCAddColorburst(NTSCModeTiming* timing, unsigned char *rowBuffer, int row
                 case 3: rowBuffer[col] = NTSCColorburst270; break;
             }
         }
-        else
+    }
+    else
+    {
+        for(int col = startOfColorburstClocks; col < startOfColorburstClocks + NTSC_COLORBURST_CYCLES * 6; col++)
         {
             switch((col - startOfColorburstClocks) % 6) {
                 case 0: rowBuffer[col] = NTSCColorburst0; break;
@@ -290,16 +293,16 @@ void NTSCAddColorburst(NTSCModeTiming* timing, unsigned char *rowBuffer, int row
     }
 }
 
-void NTSCFillBlankLine(NTSCModeTiming *clocks, unsigned char *rowBuffer, int withColorburst)
+void NTSCFillBlankLine(NTSCModeTiming *timing, unsigned char *rowBuffer, int withColorburst)
 {
-    memset(rowBuffer, NTSCBlack, clocks->line_clocks);
-    for (int col = 0; col < clocks->line_clocks; col++)
+    memset(rowBuffer, NTSCBlack, timing->line_clocks);
+    for (int col = 0; col < timing->line_clocks; col++)
     {
-        if (col < clocks->hsync) {
+        if (col < timing->hsync) {
             rowBuffer[col] = NTSCSyncTip;
-        } else if(col < clocks->hsync + clocks->back_porch) {
+        } else if(col < timing->hsync + timing->back_porch) {
             rowBuffer[col] = NTSCSyncPorch;
-        } else if(col >= clocks->line_clocks - clocks->front_porch) {
+        } else if(col >= timing->line_clocks - timing->front_porch) {
             rowBuffer[col] = NTSCSyncPorch;
         } else {
             rowBuffer[col] = NTSCBlack;
@@ -307,11 +310,11 @@ void NTSCFillBlankLine(NTSCModeTiming *clocks, unsigned char *rowBuffer, int wit
     }
     if(withColorburst)
     {
-        NTSCAddColorburst(clocks, rowBuffer, 0);
+        NTSCAddColorburst(timing, rowBuffer, 0);
     }
 }
 
-void NTSCGenerateLineBuffers(NTSCModeTiming *clocks)
+void NTSCGenerateLineBuffers(NTSCModeTiming *timing)
 {
     // one line = (1 / 3579545) * (455/2)
 
@@ -320,10 +323,10 @@ void NTSCGenerateLineBuffers(NTSCModeTiming *clocks)
     // pixels is (1 - .165) * (1 / 15734) / (1 / 3579545) = 189.96568418711380557696 cycles (190)
     //     280 cycles at double clock
 
-    NTSCFillEqPulseLine(clocks, NTSCEqSyncPulseLine);
-    NTSCFillVSyncLine(clocks, NTSCVSyncLine);
-    NTSCFillBlankLine(clocks, NTSCBlankLineBW, 0);
-    NTSCFillBlankLine(clocks, NTSCBlankLineColor, 1);
+    NTSCFillEqPulseLine(timing, NTSCEqSyncPulseLine);
+    NTSCFillVSyncLine(timing, NTSCVSyncLine);
+    NTSCFillBlankLine(timing, NTSCBlankLineBW, 0);
+    NTSCFillBlankLine(timing, NTSCBlankLineColor, 1);
 }
 
 int DefaultNeedsColorburst()
@@ -365,6 +368,8 @@ void RoNTSCSetMode(int interlaced, RoRowConfig row_config, RoNTSCModeInitVideoMe
     }
 
     NTSCModeFuncsValid = 0;
+    // XXX handle row_config != previous row_config by tearing down NTSC scanout, changing clock, and restarting NTSC scanout
+    NTSCRowConfig = row_config;
     switch(NTSCRowConfig) 
     {
         case RO_VIDEO_ROW_SAMPLES_912:
@@ -385,8 +390,6 @@ void RoNTSCSetMode(int interlaced, RoRowConfig row_config, RoNTSCModeInitVideoMe
     NTSCModeInitVideoMemory = initFunc;
     NTSCModeFillRowBuffer = fillBufferFunc;
     NTSCModeInterlaced = interlaced;
-    NTSCRowConfig = row_config;
-    // XXX handle row_config != previous row_config by tearing down NTSC scanout, changing clock, and restarting NTSC scanout
     initFunc(NTSCVideoMemory, sizeof(NTSCVideoMemory), NTSCBlack, NTSCWhite);
     NTSCRowNumber = 0;
     NTSCFrameNumber = 0;
@@ -396,7 +399,7 @@ void RoNTSCSetMode(int interlaced, RoRowConfig row_config, RoNTSCModeInitVideoMe
 // NTSC interlaced is made up of "odd" and "even" fields.  For NTSC, the first field is
 // odd, which means it's #1.
 
-void NTSCFillRowBuffer(NTSCModeTiming *clocks, int frameNumber, int lineNumber, unsigned char *rowBuffer)
+void NTSCFillRowBuffer(NTSCModeTiming *timing, int frameNumber, int lineNumber, unsigned char *rowBuffer)
 {
     // XXX could optimize these by having one branch be lines < 21
 
@@ -404,22 +407,26 @@ void NTSCFillRowBuffer(NTSCModeTiming *clocks, int frameNumber, int lineNumber, 
      * Rows 0 through 8 are equalizing pulse, then vsync, then equalizing pulse
      */
 
-    if(lineNumber < NTSC_EQPULSE_LINES) {
+    // if(lineNumber < NTSC_EQPULSE_LINES) {
+    if(lineNumber ==  0) {
 
         // odd field equalizing pulse
         memcpy(rowBuffer, NTSCEqSyncPulseLine, sizeof(NTSCEqSyncPulseLine));
 
-    } else if(lineNumber - NTSC_EQPULSE_LINES < NTSC_VSYNC_LINES) {
+    // } else if(lineNumber - NTSC_EQPULSE_LINES < NTSC_VSYNC_LINES) {
+    } else if(lineNumber == NTSC_EQPULSE_LINES) {
 
         // odd field VSYNC
         memcpy(rowBuffer, NTSCVSyncLine, sizeof(NTSCVSyncLine));
 
-    } else if(lineNumber - (NTSC_EQPULSE_LINES + NTSC_VSYNC_LINES) < NTSC_EQPULSE_LINES) {
+    // } else if(lineNumber - (NTSC_EQPULSE_LINES + NTSC_VSYNC_LINES) < NTSC_EQPULSE_LINES) {
+    } else if(lineNumber == NTSC_EQPULSE_LINES + NTSC_VSYNC_LINES) {
 
         // odd field equalizing pulse
         memcpy(rowBuffer, NTSCEqSyncPulseLine, sizeof(NTSCEqSyncPulseLine));
 
-    } else if(lineNumber - (NTSC_EQPULSE_LINES + NTSC_VSYNC_LINES + NTSC_EQPULSE_LINES) < NTSC_VBLANK_LINES) {
+    // } else if(lineNumber - (NTSC_EQPULSE_LINES + NTSC_VSYNC_LINES + NTSC_EQPULSE_LINES) < NTSC_VBLANK_LINES) {
+    } else if(lineNumber == NTSC_EQPULSE_LINES + NTSC_VSYNC_LINES + NTSC_EQPULSE_LINES) {
 
         /*
          * Rows 9 through 2X are other part of vertical blank
@@ -461,7 +468,8 @@ void NTSCFillRowBuffer(NTSCModeTiming *clocks, int frameNumber, int lineNumber, 
             memset(rowBuffer + NTSCRowSamples / 2, NTSCSyncPorch, NTSCRowSamples / 2);
         }
 
-    } else if((lineNumber >= 272) && (lineNumber <= 281)) { // XXX half line at 282
+    // } else if((lineNumber >= 272) && (lineNumber <= 281)) { // XXX half line at 282
+    } else if(lineNumber == 272) { // XXX half line at 282
 
         /*
          * Rows 272 through 2XX are other part of vertical blank
@@ -474,12 +482,18 @@ void NTSCFillRowBuffer(NTSCModeTiming *clocks, int frameNumber, int lineNumber, 
             memcpy(rowBuffer, NTSCBlankLineBW, NTSCRowSamples);
         }
 
-    } else {
+    } else if(
+        ((lineNumber >= NTSC_EQPULSE_LINES + NTSC_VSYNC_LINES + NTSC_EQPULSE_LINES + NTSC_VBLANK_LINES) && (lineNumber < 263))
+        ||
+        (lineNumber >= 282)) {
 
-        if(NTSCModeFuncsValid) {
-            memcpy(rowBuffer, NTSCModeNeedsColorburst() ? NTSCBlankLineColor : NTSCBlankLineBW, NTSCRowSamples);
-        } else {
-            memcpy(rowBuffer, NTSCBlankLineBW, NTSCRowSamples);
+        if((lineNumber == (NTSC_EQPULSE_LINES + NTSC_VSYNC_LINES + NTSC_EQPULSE_LINES + NTSC_VBLANK_LINES)) || (lineNumber >= 282))
+        {
+            if(NTSCModeFuncsValid) {
+                memcpy(rowBuffer, NTSCModeNeedsColorburst() ? NTSCBlankLineColor : NTSCBlankLineBW, NTSCRowSamples);
+            } else {
+                memcpy(rowBuffer, NTSCBlankLineBW, NTSCRowSamples);
+            }
         }
 
         int rowWithinFrame;
@@ -497,7 +511,7 @@ void NTSCFillRowBuffer(NTSCModeTiming *clocks, int frameNumber, int lineNumber, 
             memcpy(rowBuffer + NTSCRowSamples / 2, NTSCEqSyncPulseLine, NTSCRowSamples / 2);
         } else if((lineNumber == 282) && NTSCModeInterlaced) {
             // interlacing, special line 282 - write SyncPorch from BackPorch to middle of line after mode's fillRow()
-            memset(rowBuffer + clocks->hsync + clocks->back_porch, NTSCSyncPorch, NTSCRowSamples / 2 - (clocks->hsync + clocks->back_porch));
+            memset(rowBuffer + timing->hsync + timing->back_porch, NTSCSyncPorch, NTSCRowSamples / 2 - (timing->hsync + timing->back_porch));
         }
     }
 }
@@ -527,8 +541,6 @@ void __isr dma_handler()
 void NTSCInit()
 {
     NTSCCalculateParameters();
-    NTSCCalculateLineClocks(&NTSCTiming912, 912);
-    NTSCCalculateLineClocks(&NTSCTiming1368, 1368);
 }
 
 int init_video(void* buffer, uint32_t bufferSize, uint8_t blackvalue, uint8_t whitevalue)
@@ -548,13 +560,102 @@ void fillrow(int frameIndex, int rowNumber, size_t maxSamples, uint8_t* rowBuffe
     {
         rowNumber = 263 + rowNumber / 2;
     }
-    memcpy(rowBuffer, buffer + rowNumber * 912 + 164, maxSamples);
+    memcpy(rowBuffer, buffer + rowNumber * 912 + 164, 704); // maxSamples);
+}
+
+//----------------------------------------------------------------------------
+// 4-bit 256x192 pixmap mode, can support rasterized TMS9918 screen
+
+#define Pixmap256_192_4b_MODE_WIDTH 768
+#define Pixmap256_192_4b_MODE_LEFT ((1056 - Pixmap256_192_4b_MODE_WIDTH) / 2) 
+#define Pixmap256_192_4b_MODE_HEIGHT 192 
+#define Pixmap256_192_4b_MODE_TOP (240 / 2 - Pixmap256_192_4b_MODE_HEIGHT / 2);
+
+uint8_t *Pixmap256_192_4b_Framebuffer;
+
+uint8_t Pixmap256_192_4b_ColorsToNTSC[16][6];
+
+// XXX TODO: convert original patent waveforms into YIQ
+// May not be able to get the real YIQ values because resistor
+// values are not listed in patent
+void Pixmap256_192_4b_SetPaletteEntry(int color, uint8_t r, uint8_t g, uint8_t b)
+{
+    float y, i, q;
+    RoRGBToYIQ(r / 255.0f, g / 255.0f, b / 255.0f, &y, &i, &q);
+
+    for(int phase = 0; phase < 6; phase++) {
+        Pixmap256_192_4b_ColorsToNTSC[color][phase] = RoNTSCYIQToDAC(y, i, q, phase / 6.0);
+    }
+}
+
+inline uint8_t Pixmap256_192_4b_GetColorIndex(int x, uint8_t *rowColors)
+{
+    if((x & 0b1) == 0) {
+        return rowColors[x / 2] & 0xF;
+    } else {
+        return (rowColors[x / 2] & 0xF0) >> 4;
+    }
+}
+
+int Pixmap256_192_4b_ModeNeedsColorburst()
+{
+    return 1;
+}
+
+static int Pixmap256_192_4b_ModeInitVideoMemory(void *videoMemory, uint32_t size, uint8_t, uint8_t)
+{
+    Pixmap256_192_4b_Framebuffer = (uint8_t*)videoMemory;
+
+    return 1; // XXX should return 0 here if memory insufficient
+}
+
+
+__attribute__((hot,flatten)) void __time_critical_func(Pixmap256_192_4b_ModeFillRowBuffer)([[maybe_unused]] int frameIndex, int rowNumber, [[maybe_unused]] size_t maxSamples, uint8_t* rowBuffer)
+{
+    int rowIndex = rowNumber - Pixmap256_192_4b_MODE_TOP;
+    if((rowIndex >= 0) && (rowIndex < 192)) {
+        uint8_t* rowColors = Pixmap256_192_4b_Framebuffer + rowIndex * 128;
+
+        // convert rowColors to NTSC waveform into rowDst 3 samples at a time.
+        uint16_t index = Pixmap256_192_4b_MODE_LEFT;
+
+        for(int i = 0; i < 256; i++) {
+            uint8_t *color = Pixmap256_192_4b_ColorsToNTSC[Pixmap256_192_4b_GetColorIndex(i, rowColors)] ;
+            *rowBuffer++ = color[(index + 0) % 6];
+            *rowBuffer++ = color[(index + 1) % 6];
+            *rowBuffer++ = color[(index + 2) % 6];
+            index += 3;
+        }
+    }
 }
 
 int needs_colorburst()
 {
     return 1;
+    // return 0;
 }
+
+static uint8_t TMS9918_Colors[16][3] = {
+    {0, 0, 0}, /* if BACKDROP is 0, supply black */
+    {0, 0, 0},
+    {35, 203, 50},
+    {96, 221, 108},
+    {84, 78, 255},
+    {125, 112, 255},
+    {210, 84, 66},
+    {69, 232, 255},
+    {250, 89, 72},
+    {255, 124, 108},
+    {211, 198, 60},
+    {229, 210, 109},
+    {35, 178, 44},
+    {200, 90, 198},
+    {204, 204, 204},
+    {255, 255, 255},
+};
+
+const extern unsigned char zaxxon_bytes[];
+const extern unsigned int zaxxon_length;
 
 int main()
 {
@@ -579,12 +680,11 @@ int main()
 
     printf("Rocinante on Pico, %ld clock rate\n", clock_get_hz(clk_sys));
 
-    size_t size = 912;
-    uint32_t freq_needed = 14318180 ; // 14493570 ; // 14794309; // correction for weird timing I see, was // 14318180;
+    // size_t size = 912;
+    // uint32_t freq_needed = 14318180;
+    size_t size = 1368;
+    uint32_t freq_needed = 21477270;
 
-    // Set processor clock to 128.863620 and then clock out a value
-    // every 9 cycles?  O_o  Probably no better than setting PIO to 14.31818 * 2
-    // set timer to 9 cycles somehow?
 
     for(int i = NTSC_PIN_BASE; i < NTSC_PIN_BASE + NTSC_PIN_COUNT; i++) {
         gpio_set_slew_rate(i, GPIO_SLEW_RATE_FAST);
@@ -646,8 +746,24 @@ int main()
     pio_sm_set_enabled(pio, sm, true);
     dma_channel_start(stream_chan);
 
+    printf("initializing composite\n");
     NTSCInit();
-    RoNTSCSetMode(1, RO_VIDEO_ROW_SAMPLES_912, init_video, fillrow, needs_colorburst);
+    if(0)
+    {
+         RoNTSCSetMode(1, RO_VIDEO_ROW_SAMPLES_1368, init_video, fillrow, needs_colorburst);
+    }
+    else 
+    {
+        printf("setting palette\n");
+        for(int i = 0; i < 16; i++) {
+            const uint8_t *c = TMS9918_Colors[i];
+            Pixmap256_192_4b_SetPaletteEntry(i, c[0], c[1], c[2]);
+        }
+        printf("setting mode\n");
+        RoNTSCSetMode(0, RO_VIDEO_ROW_SAMPLES_1368, Pixmap256_192_4b_ModeInitVideoMemory, Pixmap256_192_4b_ModeFillRowBuffer, Pixmap256_192_4b_ModeNeedsColorburst);
+        printf("copying framebuffer\n");
+        memcpy(Pixmap256_192_4b_Framebuffer, zaxxon_bytes, zaxxon_length);
+    }
 
     printf("streaming...\n");
 
