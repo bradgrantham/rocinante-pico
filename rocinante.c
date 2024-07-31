@@ -610,21 +610,28 @@ static int Pixmap256_192_4b_ModeInitVideoMemory(void *videoMemory, uint32_t size
 }
 
 
-__attribute__((hot,flatten)) void __time_critical_func(Pixmap256_192_4b_ModeFillRowBuffer)([[maybe_unused]] int frameIndex, int rowNumber, [[maybe_unused]] size_t maxSamples, uint8_t* rowBuffer)
+__attribute__((hot,flatten)) void Pixmap256_192_4b_ModeFillRowBuffer([[maybe_unused]] int frameIndex, int rowNumber, [[maybe_unused]] size_t maxSamples, uint8_t* rowBuffer)
 {
     int rowIndex = rowNumber - Pixmap256_192_4b_MODE_TOP;
     if((rowIndex >= 0) && (rowIndex < 192)) {
         uint8_t* rowColors = Pixmap256_192_4b_Framebuffer + rowIndex * 128;
 
         // convert rowColors to NTSC waveform into rowDst 3 samples at a time.
-        uint16_t index = Pixmap256_192_4b_MODE_LEFT;
+        rowBuffer += Pixmap256_192_4b_MODE_LEFT;
 
-        for(int i = 0; i < 256; i++) {
-            uint8_t *color = Pixmap256_192_4b_ColorsToNTSC[Pixmap256_192_4b_GetColorIndex(i, rowColors)] ;
-            *rowBuffer++ = color[(index + 0) % 6];
-            *rowBuffer++ = color[(index + 1) % 6];
-            *rowBuffer++ = color[(index + 2) % 6];
-            index += 3;
+        // two at a time
+        for(int i = 0; i < 256; i += 2) {
+            uint8_t fb_byte = *rowColors++;
+            uint8_t nybble = fb_byte & 0xF;
+            uint8_t *color = Pixmap256_192_4b_ColorsToNTSC[nybble];
+            *rowBuffer++ = color[0];
+            *rowBuffer++ = color[1];
+            *rowBuffer++ = color[2];
+            nybble = fb_byte >> 4;
+            color = Pixmap256_192_4b_ColorsToNTSC[nybble];
+            *rowBuffer++ = color[3];
+            *rowBuffer++ = color[4];
+            *rowBuffer++ = color[5];
         }
     }
 }
