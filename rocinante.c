@@ -12,6 +12,8 @@
 #include "pico/time.h"
 #include "rocinante.pio.h"
 
+#include "rocinante.h"
+
 extern const uint8_t buffer[];
 
 const uint LED_PIN = 25;
@@ -19,155 +21,12 @@ const uint LED_PIN = 25;
 const uint32_t NTSC_PIN_BASE = 2;
 const uint32_t NTSC_PIN_COUNT = 8;
 
-
-// BEGIN copied from rosa/api/rocinante.h
-
-//----------------------------------------------------------------------------
-// DAC
-
-#define DAC_VALUE_LIMIT 0xFF
-
-#define MAX_DAC_VOLTAGE 1.32f
-#define MAX_DAC_VOLTAGE_F16 (132 * 65536 / 100)
-
-#define INLINE inline
-
-INLINE unsigned char RoDACVoltageToValue(float voltage)
-{
-    if(voltage < 0.0f) {
-        return 0x0;
-    }
-    uint32_t value = (uint32_t)(voltage / MAX_DAC_VOLTAGE * 255);
-    if(value >= DAC_VALUE_LIMIT) {
-        return DAC_VALUE_LIMIT;
-    }
-    return value;
-}
-
-INLINE unsigned char RoDACVoltageToValueNoBounds(float voltage)
-{
-    return (uint32_t)(voltage / MAX_DAC_VOLTAGE * 255);
-}
-
-INLINE int RoDACVoltageToValueFixed16NoBounds(int voltage)
-{
-    return (uint32_t)(voltage * 65535 / MAX_DAC_VOLTAGE_F16) * 256;
-}
-
-
-//----------------------------------------------------------------------------
-// NTSC timing and voltage levels
-
-#define NTSC_COLORBURST_FREQUENCY       3579545
-
-typedef enum {
-    RO_VIDEO_ROW_SAMPLES_912 = 1,          // 912 samples, 4 per colorburst cycle
-    RO_VIDEO_ROW_SAMPLES_1368 = 2,         // 1368 samples, 6 per colorburst cycle
-} RoRowConfig;
-
-// if we're doing 4x colorburst at 228 cycles, that's 912 samples at 14.318180 MHz
-// if we're doing 6x colorburst at 228 cycles, that's 1368 samples at 21.47727 MHz
-
-#define ROW_SAMPLE_STORAGE_MAX 1368
-
-#define NTSC_EQPULSE_LINES	3
-#define NTSC_VSYNC_LINES	3
-#define NTSC_VBLANK_LINES	11
-#define NTSC_FRAME_LINES	525
-
-/* these are in units of one scanline */
-#define NTSC_EQ_PULSE_INTERVAL	.04
-#define NTSC_VSYNC_BLANK_INTERVAL	.43
-#define NTSC_HOR_SYNC_DUR	.075
-#define NTSC_FRONTPORCH		.02
-/* BACKPORCH including COLORBURST */
-#define NTSC_BACKPORCH		.075
-
-#define NTSC_COLORBURST_CYCLES  9
-
-#define NTSC_FRAMES		(59.94 / 2)
-
-#define NTSC_SYNC_TIP_VOLTAGE   0.0f
-#define NTSC_SYNC_PORCH_VOLTAGE   .285f
-#define NTSC_SYNC_BLACK_VOLTAGE   .339f
-#define NTSC_SYNC_WHITE_VOLTAGE   1.0f  /* VCR had .912v */
-
-INLINE unsigned char RoNTSCYIQToDAC(float y, float i, float q, float tcycles)
-{
-// This is transcribed from the NTSC spec, double-checked.
-    float w_t = tcycles * M_PI * 2;
-    float sine = sinf(w_t + 33.0f / 180.0f * M_PI);
-    float cosine = cosf(w_t + 33.0f / 180.0f * M_PI);
-    float signal = y + q * sine + i * cosine;
-// end of transcription
-
-    return RoDACVoltageToValue(NTSC_SYNC_BLACK_VOLTAGE + signal * (NTSC_SYNC_WHITE_VOLTAGE - NTSC_SYNC_BLACK_VOLTAGE));
-}
-
-INLINE unsigned char RoNTSCYIQDegreesToDAC(float y, float i, float q, int degrees)
-{
-    float sine, cosine;
-    if(degrees == 0) {
-        sine = 0.544638f;
-        cosine = 0.838670f;
-    } else if(degrees == 90) {
-        sine = 0.838670f;
-        cosine = -0.544638f;
-    } else if(degrees == 180) {
-        sine = -0.544638f;
-        cosine = -0.838670f;
-    } else if(degrees == 270) {
-        sine = -0.838670f;
-        cosine = 0.544638f;
-    } else {
-        sine = 0;
-        cosine = 0;
-    }
-    float signal = y + q * sine + i * cosine;
-
-    return RoDACVoltageToValueNoBounds(NTSC_SYNC_BLACK_VOLTAGE + signal * (NTSC_SYNC_WHITE_VOLTAGE - NTSC_SYNC_BLACK_VOLTAGE));
-}
-
-// This is transcribed from the NTSC spec, double-checked.
-INLINE void RoRGBToYIQ(float r, float g, float b, float *y, float *i, float *q)
-{
-    *y = .30f * r + .59f * g + .11f * b;
-    *i = -.27f * (b - *y) + .74f * (r - *y);
-    *q = .41f * (b - *y) + .48f * (r - *y);
-}
-
-// Alternatively, a 3x3 matrix transforming [r g b] to [y i q] is:
-// (untested - computed from equation above)
-// 0.300000 0.590000 0.110000
-// 0.599000 -0.277300 -0.321700
-// 0.213000 -0.525100 0.312100
-
-// A 3x3 matrix transforming [y i q] back to [r g b] is:
-// (untested - inverse of 3x3 matrix above)
-// 1.000000 0.946882 0.623557
-// 1.000000 -0.274788 -0.635691
-// 1.000000 -1.108545 1.709007
-
-// Using inverse 3x3 matrix above.  Tested numerically to be the inverse of RGBToYIQ
-INLINE void RoYIQToRGB(float y, float i, float q, float *r, float *g, float *b)
-{
-    *r = 1.0f * y + .946882f * i + 0.623557f * q;
-    *g = 1.000000f * y + -0.274788f * i + -0.635691f * q;
-    *b = 1.000000f * y + -1.108545f * i + 1.709007f * q;
-}
-
-typedef int (*RoNTSCModeInitVideoMemoryFunc)(void* buffer, uint32_t bufferSize, uint8_t blackvalue, uint8_t whitevalue);
-typedef void (*RoNTSCModeFillRowBufferFunc)(int frameIndex, int rowNumber, size_t maxSamples, uint8_t* rowBuffer);
-typedef int (*RoNTSCModeNeedsColorburstFunc)();
-void RoNTSCSetMode(int interlaced, RoRowConfig row_config, RoNTSCModeInitVideoMemoryFunc initFunc, RoNTSCModeFillRowBufferFunc fillBufferFunc, RoNTSCModeNeedsColorburstFunc needsColorBurstFunc);
-
-// END copied from rosa/api/rocinante.h
-
 #define SECTION_CCMRAM
 
 // BEGIN copied from STM32F Rocinante Core/Src/main
 
 // These should be in tightly coupled memory to reduce contention with RAM during DMA 
+#define ROW_SAMPLE_STORAGE_MAX 1368
 uint8_t NTSCEqSyncPulseLine[ROW_SAMPLE_STORAGE_MAX];
 uint8_t NTSCVSyncLine[ROW_SAMPLE_STORAGE_MAX];
 uint8_t NTSCBlankLineBW[ROW_SAMPLE_STORAGE_MAX];
@@ -516,6 +375,17 @@ void NTSCFillRowBuffer(NTSCModeTiming *timing, int frameNumber, int lineNumber, 
     }
 }
 
+void RoNTSCWaitFrame()
+{
+    // NTSC won't actually go lineNumber >= 525...
+    int field0_vblank;
+    int field1_vblank;
+    do {
+        field0_vblank = (NTSCRowNumber > 257) && (NTSCRowNumber < 262);
+        field1_vblank = (NTSCRowNumber > 520) && (NTSCRowNumber < NTSC_FRAME_LINES);
+    } while(!field0_vblank && !field1_vblank); // Wait for VBLANK; should do something smarter
+}
+
 // END copied from STM32F Rocinante Core/Src/main
 
 int irq_dma_chan;
@@ -563,106 +433,45 @@ void fillrow(int frameIndex, int rowNumber, size_t maxSamples, uint8_t* rowBuffe
     memcpy(rowBuffer, buffer + rowNumber * 912 + 164, 704); // maxSamples);
 }
 
-//----------------------------------------------------------------------------
-// 4-bit 256x192 pixmap mode, can support rasterized TMS9918 screen
+int coleco_main(int argc, const char **argv);
 
-#define Pixmap256_192_4b_MODE_WIDTH 768
-#define Pixmap256_192_4b_MODE_LEFT ((1056 - Pixmap256_192_4b_MODE_WIDTH) / 2) 
-#define Pixmap256_192_4b_MODE_HEIGHT 192 
-#define Pixmap256_192_4b_MODE_TOP (240 / 2 - Pixmap256_192_4b_MODE_HEIGHT / 2);
-
-uint8_t *Pixmap256_192_4b_Framebuffer;
-
-uint8_t Pixmap256_192_4b_ColorsToNTSC[16][6];
-
-// XXX TODO: convert original patent waveforms into YIQ
-// May not be able to get the real YIQ values because resistor
-// values are not listed in patent
-void Pixmap256_192_4b_SetPaletteEntry(int color, uint8_t r, uint8_t g, uint8_t b)
+uint32_t RoGetMillis()
 {
-    float y, i, q;
-    RoRGBToYIQ(r / 255.0f, g / 255.0f, b / 255.0f, &y, &i, &q);
-
-    for(int phase = 0; phase < 6; phase++) {
-        Pixmap256_192_4b_ColorsToNTSC[color][phase] = RoNTSCYIQToDAC(y, i, q, phase / 6.0);
-    }
+    absolute_time_t now = get_absolute_time();
+    return to_ms_since_boot (now);
 }
 
-inline uint8_t Pixmap256_192_4b_GetColorIndex(int x, uint8_t *rowColors)
+int RoDoHousekeeping(void)
 {
-    if((x & 0b1) == 0) {
-        return rowColors[x / 2] & 0xF;
-    } else {
-        return (rowColors[x / 2] & 0xF0) >> 4;
-    }
+    return 0;
 }
 
-int Pixmap256_192_4b_ModeNeedsColorburst()
+uint8_t RoGetJoystickState(RoControllerIndex which)
 {
-    return 1;
+    return 0;
 }
 
-static int Pixmap256_192_4b_ModeInitVideoMemory(void *videoMemory, uint32_t size, uint8_t, uint8_t)
+uint8_t RoGetKeypadState(RoControllerIndex which)
 {
-    Pixmap256_192_4b_Framebuffer = (uint8_t*)videoMemory;
-
-    return 1; // XXX should return 0 here if memory insufficient
+    return 0;
 }
 
-
-__attribute__((hot,flatten)) void Pixmap256_192_4b_ModeFillRowBuffer([[maybe_unused]] int frameIndex, int rowNumber, [[maybe_unused]] size_t maxSamples, uint8_t* rowBuffer)
+size_t RoAudioEnqueueSamplesBlocking(size_t writeSize /* in bytes */, uint8_t* buffer)
 {
-    int rowIndex = rowNumber - Pixmap256_192_4b_MODE_TOP;
-    if((rowIndex >= 0) && (rowIndex < 192)) {
-        uint8_t* rowColors = Pixmap256_192_4b_Framebuffer + rowIndex * 128;
-
-        // convert rowColors to NTSC waveform into rowDst 3 samples at a time.
-        rowBuffer += Pixmap256_192_4b_MODE_LEFT;
-
-        // two at a time
-        for(int i = 0; i < 256; i += 2) {
-            uint8_t fb_byte = *rowColors++;
-            uint8_t nybble = fb_byte & 0xF;
-            uint8_t *color = Pixmap256_192_4b_ColorsToNTSC[nybble];
-            *rowBuffer++ = color[0];
-            *rowBuffer++ = color[1];
-            *rowBuffer++ = color[2];
-            nybble = fb_byte >> 4;
-            color = Pixmap256_192_4b_ColorsToNTSC[nybble];
-            *rowBuffer++ = color[3];
-            *rowBuffer++ = color[4];
-            *rowBuffer++ = color[5];
-        }
-    }
+    return 0;
 }
 
-int needs_colorburst()
+void RoAudioClear()
 {
-    return 1;
-    // return 0;
 }
 
-static uint8_t TMS9918_Colors[16][3] = {
-    {0, 0, 0}, /* if BACKDROP is 0, supply black */
-    {0, 0, 0},
-    {35, 203, 50},
-    {96, 221, 108},
-    {84, 78, 255},
-    {125, 112, 255},
-    {210, 84, 66},
-    {69, 232, 255},
-    {250, 89, 72},
-    {255, 124, 108},
-    {211, 198, 60},
-    {229, 210, 109},
-    {35, 178, 44},
-    {200, 90, 198},
-    {204, 204, 204},
-    {255, 255, 255},
-};
+#define AUDIO_CHUNK_SIZE (256 * 2)
 
-const extern unsigned char zaxxon_bytes[];
-const extern unsigned int zaxxon_length;
+void RoAudioGetSamplingInfo(float *rate, size_t *recommendedChunkSize)
+{
+    *rate = 15699.76074561403508;
+    *recommendedChunkSize = AUDIO_CHUNK_SIZE;
+}
 
 int main()
 {
@@ -682,6 +491,10 @@ int main()
 
     stdio_init_all();
 
+    FILE *fp = fopen("coleco/COLECO.ROM", "rb");
+    printf("fp = %p\n", fp);
+    fclose(fp);
+
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
 
@@ -691,7 +504,6 @@ int main()
     // uint32_t freq_needed = 14318180;
     size_t size = 1368;
     uint32_t freq_needed = 21477270;
-
 
     for(int i = NTSC_PIN_BASE; i < NTSC_PIN_BASE + NTSC_PIN_COUNT; i++) {
         gpio_set_slew_rate(i, GPIO_SLEW_RATE_FAST);
@@ -755,29 +567,23 @@ int main()
 
     printf("initializing composite\n");
     NTSCInit();
-    if(0)
-    {
-         RoNTSCSetMode(1, RO_VIDEO_ROW_SAMPLES_1368, init_video, fillrow, needs_colorburst);
-    }
-    else 
-    {
-        printf("setting palette\n");
-        for(int i = 0; i < 16; i++) {
-            const uint8_t *c = TMS9918_Colors[i];
-            Pixmap256_192_4b_SetPaletteEntry(i, c[0], c[1], c[2]);
-        }
-        printf("setting mode\n");
-        RoNTSCSetMode(0, RO_VIDEO_ROW_SAMPLES_1368, Pixmap256_192_4b_ModeInitVideoMemory, Pixmap256_192_4b_ModeFillRowBuffer, Pixmap256_192_4b_ModeNeedsColorburst);
-        printf("copying framebuffer\n");
-        memcpy(Pixmap256_192_4b_Framebuffer, zaxxon_bytes, zaxxon_length);
-    }
 
-    printf("streaming...\n");
+    printf("launching...\n");
 
 // need an IRQ
     int previous_frame = 0;
     absolute_time_t started = get_absolute_time();
     uint64_t started_us = to_us_since_boot (started);
+
+    const char *args[] = {
+        "emulator",
+        "--playback-controllers",
+        "zaxxon.txt",
+        "coleco/COLECO.ROM",
+        "zaxxon.col",
+    };
+    coleco_main(sizeof(args) / sizeof(args[0]), args); /* doesn't return */
+
     while(1)
     {
         sleep_ms(1);

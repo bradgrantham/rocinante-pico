@@ -7,7 +7,11 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 pico_sdk_init()
 
-add_executable(rocinante rocinante.c zaxxon.c frame.c)
+add_compile_definitions(ROSA=1)
+
+add_executable(rocinante rocinante.c cpp-support.cpp events.cpp hid.cpp rosa/api/key-repeat.cpp rosa/api/text-mode.cpp rosa/api/8x16.cpp rosa/api/ui.cpp rosa/apps/coleco/tms9918.cpp rosa/apps/coleco/emulator.cpp rosa/apps/coleco/coleco_platform_rosa.cpp rosa/apps/coleco/z80emu-cv.c syscalls.c)
+
+target_include_directories(rocinante PRIVATE rosa/api)
 
 pico_generate_pio_header(rocinante ${CMAKE_CURRENT_LIST_DIR}/rocinante.pio)
 

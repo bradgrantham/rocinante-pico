@@ -1,0 +1,3 @@
+[submodule "rosa"]
+	path = rosa
+	url = https://github.com/bradgrantham/rosa.git
