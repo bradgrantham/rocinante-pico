@@ -12,6 +12,7 @@
 #include "pico/time.h"
 #include "rocinante.pio.h"
 
+#include "byte_queue.h"
 #include "rocinante.h"
 
 extern const uint8_t buffer[];
@@ -473,6 +474,60 @@ void RoAudioGetSamplingInfo(float *rate, size_t *recommendedChunkSize)
     *recommendedChunkSize = AUDIO_CHUNK_SIZE;
 }
 
+#define BAUD_RATE 115200
+#define DATA_BITS 8
+#define STOP_BITS 1
+#define PARITY    UART_PARITY_NONE
+
+#define UART0_TX  0
+#define UART0_RX  1
+
+// Just make press-release events separated by 100ms and let emulator Rosa shims figure out what to do.
+// Do I add a separate key queue?
+    // maybe need a SystemDrainEvents that gets things in the queue that is called first thing by RoGetEvent
+
+struct queue uart_input_queue;
+extern void enqueue_serial_input(uint8_t c);
+
+void uart0_irq_routine(void)
+{
+    while (uart_is_readable(uart0))
+    {
+        uint8_t c = uart_getc(uart0);
+        // Enqueue uart0 input
+        enqueue_serial_input(c);
+#if 0
+        int isFull = queue_isfull(&uart_input_queue);
+        if(!isFull)
+        {
+            queue_enq(&uart_input_queue, c);
+        }
+#endif
+    }
+}
+
+void __io_putchar( char c )
+{
+    uart_putc(uart0, c);
+}
+
+void io_setup()
+{
+   queue_init(&uart_input_queue, QUEUE_CAPACITY);
+
+   uart_init(uart0, BAUD_RATE);
+   gpio_set_function(UART0_TX, GPIO_FUNC_UART);
+   gpio_set_function(UART0_RX, GPIO_FUNC_UART);
+   uart_set_format(uart0, DATA_BITS, STOP_BITS, PARITY);
+
+   uart_set_hw_flow(uart0, false, false);
+   uart_set_fifo_enabled(uart0, false);
+
+   irq_set_exclusive_handler(UART0_IRQ, uart0_irq_routine);
+   irq_set_enabled(UART0_IRQ, true);
+   uart_set_irq_enables(uart0, true, false);
+}
+
 int main()
 {
     bi_decl(bi_program_description("Rocinante on Pico."));
@@ -489,7 +544,8 @@ int main()
     const uint32_t requested_rate = 270000000; // 250000000; // 133000000;
     set_sys_clock_khz(requested_rate / 1000, 1);
 
-    stdio_init_all();
+    stdio_init_all(); // ? Why do I need this?  Don't do it in STM32 runtime
+    io_setup();
 
     FILE *fp = fopen("coleco/COLECO.ROM", "rb");
     printf("fp = %p\n", fp);
@@ -569,6 +625,22 @@ int main()
     NTSCInit();
 
     printf("launching...\n");
+
+    while(1)
+    {
+        static int thru = 0;
+        sleep_ms(1);
+        //int is_empty = queue_isempty(&uart_input_queue);
+        //if(!is_empty) {
+            //unsigned char c = queue_deq(&uart_input_queue);
+            //printf("got this key: \"%c\"\n", c);
+        //}
+        extern void CheckEvents(void);
+        CheckEvents();
+        if(thru++ % 1000 == 0) {
+            printf("through %d loops\n", thru);
+        }
+    }
 
 // need an IRQ
     int previous_frame = 0;

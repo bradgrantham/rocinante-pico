@@ -15,8 +15,8 @@ target_include_directories(rocinante PRIVATE rosa/api)
 
 pico_generate_pio_header(rocinante ${CMAKE_CURRENT_LIST_DIR}/rocinante.pio)
 
-pico_enable_stdio_usb(rocinante 1)
-pico_enable_stdio_uart(rocinante 1)
+# pico_enable_stdio_usb(rocinante 1)
+# pico_enable_stdio_uart(rocinante 1)
 
 pico_add_extra_outputs(rocinante)
 
