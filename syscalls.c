@@ -21,6 +21,22 @@
 #include "coleco_rom_blob.h"
 #include "zaxxon_col_blob.h"
 #include "zaxxon_txt_blob.h"
+#include "smurf_col_blob.h"
+#include "smurf_txt_blob.h"
+
+struct RomFile {
+    const char *name;
+    const void *blob;
+    size_t length;
+};
+
+const struct RomFile rom_files[] = {
+    { "zaxxon.txt", zaxxon_txt_bytes, zaxxon_txt_length },
+    { "zaxxon.col", zaxxon_col_bytes, zaxxon_col_length },
+    { "coleco/COLECO.ROM", coleco_rom_bytes, coleco_rom_length },
+    { "smurf.col", smurf_col_bytes, smurf_col_length },
+    { "smurf.txt", smurf_txt_bytes, smurf_txt_length },
+};
 
 #undef errno
 extern int errno;
@@ -45,10 +61,6 @@ void _exit (int status)
 	while (1) {}
 }
 
-#define ROM_NONE 0
-#define ROM_ZAXXON_TXT 1
-#define ROM_ZAXXON_COL 2
-#define ROM_COLECO_ROM 3
 
 #define MAX_FILES 4
 enum { FD_OFFSET = 3 };
@@ -60,7 +72,7 @@ static FIL files[MAX_FILES];    /* starting with fd=3, so fd 3 through 3 + MAX_F
 
 #else 
 
-static int romFile[MAX_FILES];
+static int openedRom[MAX_FILES];
 static int romSeek[MAX_FILES];
 
 #endif /* USE_FATFS */
@@ -112,8 +124,6 @@ int _close(int file)
     }
 #ifdef USE_FATFS
     f_close(&files[myFile]);
-#else
-    romFile[myFile] = ROM_NONE;
 #endif /* USE_FATFS */
     filesOpened[myFile] = 0;
     return 0;
@@ -193,25 +203,12 @@ int _read(int file, char *ptr, int len)
             return -1;
         }
 #else /* not USE_FATFS */
-        const uint8_t *blob = NULL;
-        int blob_length = 0;
-        switch(romFile[myFile])
-        {
-            case ROM_ZAXXON_TXT:
-                blob = zaxxon_txt_bytes;
-                blob_length = zaxxon_txt_length;
-                break;
-            case ROM_ZAXXON_COL:
-                blob = zaxxon_col_bytes;
-                blob_length = zaxxon_col_length;
-                break;
-            case ROM_COLECO_ROM:
-                blob = coleco_rom_bytes;
-                blob_length = coleco_rom_length;
-                break;
-        }
+        int which = openedRom[myFile];
+        const uint8_t *blob = rom_files[which].blob;
+        int blob_length = rom_files[which].length;
+
         wasRead = (romSeek[myFile] + len > blob_length) ? (blob_length - romSeek[myFile]) : len;
-        printf("read %d bytes from %d at %d\n", wasRead, romFile[myFile], romSeek[myFile]);
+        printf("read %d bytes from %d at %d\n", wasRead, openedRom[myFile], romSeek[myFile]);
         memcpy(ptr, blob + romSeek[myFile], wasRead);
         romSeek[myFile] += wasRead;
 #endif /* USE_FATFS */
@@ -268,23 +265,18 @@ int _open(char *path, int flags, ...)
 
     return which + FD_OFFSET;
 #else /* not USE_FATFS */
-    int found = ROM_NONE;
-    if(strcmp(path, "coleco/COLECO.ROM") == 0) 
+    int found = -1;
+    for(int i = 0; i < sizeof(rom_files) / sizeof(rom_files[0]); i++)
     {
-        found = ROM_COLECO_ROM;
+        if(strcmp(rom_files[i].name, path) == 0)
+        {
+            found = i;
+            break;
+        }
     }
-    else if(strcmp(path, "zaxxon.col") == 0) 
+    if(found != -1)
     {
-        found = ROM_ZAXXON_COL;
-    }
-    else if(strcmp(path, "zaxxon.txt") == 0) 
-    {
-        found = ROM_ZAXXON_TXT;
-        romSeek[which] = 0;
-    }
-    if(found != ROM_NONE)
-    {
-        romFile[which] = found;
+        openedRom[which] = found;
         romSeek[which] = 0;
         printf("opened %s as %d, file %d\n", path, found, which + FD_OFFSET);
         filesOpened[which] = 1;
