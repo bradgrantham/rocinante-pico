@@ -19,7 +19,7 @@ extern const uint8_t buffer[];
 
 const uint LED_PIN = 25;
 
-const uint32_t NTSC_PIN_BASE = 2;
+const uint32_t NTSC_PIN_BASE = 8;
 const uint32_t NTSC_PIN_COUNT = 8;
 
 #define SECTION_CCMRAM
@@ -259,6 +259,26 @@ void RoNTSCSetMode(int interlaced, RoRowConfig row_config, RoNTSCModeInitVideoMe
 // NTSC interlaced is made up of "odd" and "even" fields.  For NTSC, the first field is
 // odd, which means it's #1.
 
+void memcpy_fast_16byte_multiple(void* dst_, const void* src_, size_t size)
+{
+    const uint32_t* src = (uint32_t*)src_;
+    uint32_t* dst = (uint32_t*)dst_;
+#pragma GCC unroll 8
+    for(size_t i = 0; i < size / sizeof(*dst); i += 4 /* i++ */) {
+        uint32_t t0 = src[0];
+        uint32_t t1 = src[1];
+        uint32_t t2 = src[2];
+        uint32_t t3 = src[3];
+        dst[0] = t0;
+        dst[1] = t1;
+        dst[2] = t2;
+        dst[3] = t3;
+        src += 4;
+        dst += 4;
+        // *dst++ = *src++;
+    }
+}
+
 void NTSCFillRowBuffer(NTSCModeTiming *timing, int frameNumber, int lineNumber, unsigned char *rowBuffer)
 {
     // XXX could optimize these by having one branch be lines < 21
@@ -447,14 +467,114 @@ int RoDoHousekeeping(void)
     return 0;
 }
 
+const uint32_t JOYSTICK_KEYSELECT_PIN = 16;
+const uint32_t JOYSTICK_JOYSELECT_PIN = 17;
+const uint32_t JOYSTICK_NORTH_PIN = 18;
+const uint32_t JOYSTICK_SOUTH_PIN = 19;
+const uint32_t JOYSTICK_WEST_PIN = 20;
+const uint32_t JOYSTICK_EAST_PIN = 21;
+const uint32_t JOYSTICK_FIRE_PIN = 22;
+
+void InitializeControllerPins()
+{
+    // Set SELECT pins to high-impedance
+    gpio_init(JOYSTICK_KEYSELECT_PIN);
+    gpio_set_dir(JOYSTICK_KEYSELECT_PIN, GPIO_IN);
+    gpio_pull_up(JOYSTICK_KEYSELECT_PIN);
+
+    gpio_init(JOYSTICK_JOYSELECT_PIN);
+    gpio_set_dir(JOYSTICK_JOYSELECT_PIN, GPIO_IN);
+    gpio_pull_up(JOYSTICK_JOYSELECT_PIN);
+
+    // Set NSWEF pins to input with pull-up
+    gpio_init(JOYSTICK_NORTH_PIN);
+    gpio_set_dir(JOYSTICK_NORTH_PIN, GPIO_IN);
+    gpio_pull_up(JOYSTICK_NORTH_PIN);
+
+    gpio_init(JOYSTICK_SOUTH_PIN);
+    gpio_set_dir(JOYSTICK_SOUTH_PIN, GPIO_IN);
+    gpio_pull_up(JOYSTICK_SOUTH_PIN);
+
+    gpio_init(JOYSTICK_WEST_PIN);
+    gpio_set_dir(JOYSTICK_WEST_PIN, GPIO_IN);
+    gpio_pull_up(JOYSTICK_WEST_PIN);
+
+    gpio_init(JOYSTICK_EAST_PIN);
+    gpio_set_dir(JOYSTICK_EAST_PIN, GPIO_IN);
+    gpio_pull_up(JOYSTICK_EAST_PIN);
+
+    gpio_init(JOYSTICK_FIRE_PIN);
+    gpio_set_dir(JOYSTICK_FIRE_PIN, GPIO_IN);
+    gpio_pull_up(JOYSTICK_FIRE_PIN);
+
+}
+
 uint8_t RoGetJoystickState(RoControllerIndex which)
 {
-    return 0;
+    // Set select_joystick to RESET, which grounds joystick and fire-left switches
+    gpio_set_dir(JOYSTICK_JOYSELECT_PIN, GPIO_OUT);
+    gpio_put(JOYSTICK_JOYSELECT_PIN, 0);
+
+    sleep_us(10);
+
+    // read joystick and fire-left
+    unsigned int joystick_value = 0;
+    
+    switch(which) {
+        case CONTROLLER_1:
+            joystick_value = (
+                ((gpio_get(JOYSTICK_NORTH_PIN) ? 1 : 0) << 0) | 
+                ((gpio_get(JOYSTICK_EAST_PIN) ? 1 : 0) << 1) | 
+                ((gpio_get(JOYSTICK_SOUTH_PIN) ? 1 : 0) << 2) | 
+                ((gpio_get(JOYSTICK_WEST_PIN) ? 1 : 0) << 3) |
+                ((gpio_get(JOYSTICK_FIRE_PIN) ? 1 : 0) << 6)
+                ) ^ 0x4F;
+            break;
+
+        case CONTROLLER_2:
+            joystick_value = 0;
+            break;
+    }
+
+    // set select_joystick to high-impedance
+    gpio_set_dir(JOYSTICK_JOYSELECT_PIN, GPIO_IN);
+
+    // HAL_Delay(1);
+    return joystick_value;
 }
 
 uint8_t RoGetKeypadState(RoControllerIndex which)
 {
-    return 0;
+    // Set select_joystick to RESET, which grounds joystick and fire-left switches
+    gpio_set_dir(JOYSTICK_KEYSELECT_PIN, GPIO_OUT);
+    gpio_put(JOYSTICK_KEYSELECT_PIN, 0);
+
+    sleep_us(10);
+
+    // read joystick and fire-left
+    unsigned int keypad_value = 0;
+    
+    switch(which) {
+        case CONTROLLER_1:
+            keypad_value = (
+                ((gpio_get(JOYSTICK_NORTH_PIN) ? 1 : 0) << 0) | 
+                ((gpio_get(JOYSTICK_EAST_PIN) ? 1 : 0) << 1) | 
+                ((gpio_get(JOYSTICK_SOUTH_PIN) ? 1 : 0) << 2) | 
+                ((gpio_get(JOYSTICK_WEST_PIN) ? 1 : 0) << 3) |
+                ((gpio_get(JOYSTICK_FIRE_PIN) ? 1 : 0) << 6)
+                ) ^ 0x4F;
+            break;
+
+        case CONTROLLER_2:
+            keypad_value = 0;
+            break;
+    }
+
+    // set select_joystick to high-impedance
+    gpio_set_dir(JOYSTICK_KEYSELECT_PIN, GPIO_IN);
+
+    // HAL_Delay(1);
+    return keypad_value;
 }
 
 size_t RoAudioEnqueueSamplesBlocking(size_t writeSize /* in bytes */, uint8_t* buffer)
@@ -494,15 +614,7 @@ void uart0_irq_routine(void)
     while (uart_is_readable(uart0))
     {
         uint8_t c = uart_getc(uart0);
-        // Enqueue uart0 input
         enqueue_serial_input(c);
-#if 0
-        int isFull = queue_isfull(&uart_input_queue);
-        if(!isFull)
-        {
-            queue_enq(&uart_input_queue, c);
-        }
-#endif
     }
 }
 
@@ -511,7 +623,7 @@ void __io_putchar( char c )
     uart_putc(uart0, c);
 }
 
-void io_setup()
+void uart_setup()
 {
    queue_init(&uart_input_queue, QUEUE_CAPACITY);
 
@@ -528,6 +640,53 @@ void io_setup()
    uart_set_irq_enables(uart0, true, false);
 }
 
+char ColecoKeypadToCharacter(uint8_t value)
+{
+    switch(value) {
+        case 0: return '-';
+        case CONTROLLER_KEYPAD_0: return '0';
+        case CONTROLLER_KEYPAD_1: return '1';
+        case CONTROLLER_KEYPAD_2: return '2';
+        case CONTROLLER_KEYPAD_3: return '3';
+        case CONTROLLER_KEYPAD_4: return '4';
+        case CONTROLLER_KEYPAD_5: return '5';
+        case CONTROLLER_KEYPAD_6: return '6';
+        case CONTROLLER_KEYPAD_7: return '7';
+        case CONTROLLER_KEYPAD_8: return '8';
+        case CONTROLLER_KEYPAD_9: return '9';
+        case CONTROLLER_KEYPAD_asterisk: return '*';
+        case CONTROLLER_KEYPAD_pound: return '#';
+        default: return '?';
+    }
+}
+
+void TestControllers()
+{
+    while(1) {
+        uint8_t joystick_1_state = RoGetJoystickState(CONTROLLER_1);
+        uint8_t keypad_1_state = RoGetKeypadState(CONTROLLER_1);
+        uint8_t joystick_2_state = RoGetJoystickState(CONTROLLER_2);
+        uint8_t keypad_2_state = RoGetKeypadState(CONTROLLER_2);
+        printf("joy 1 %c %c %c %c %c %c %c     ",
+            (joystick_1_state & CONTROLLER_NORTH_BIT) ? 'N' : '-',
+            (joystick_1_state & CONTROLLER_SOUTH_BIT) ? 'S' : '-',
+            (joystick_1_state & CONTROLLER_WEST_BIT) ? 'W' : '-',
+            (joystick_1_state & CONTROLLER_EAST_BIT) ? 'E' : '-',
+            (joystick_1_state & CONTROLLER_FIRE_BIT) ? '1' : '-',
+            (keypad_1_state & CONTROLLER_FIRE_BIT) ? '2' : '-',
+            ColecoKeypadToCharacter(keypad_1_state & CONTROLLER_KEYPAD_MASK));
+        printf("joy 2 %c %c %c %c %c %c %c\n",
+            (joystick_2_state & CONTROLLER_NORTH_BIT) ? 'N' : '-',
+            (joystick_2_state & CONTROLLER_SOUTH_BIT) ? 'S' : '-',
+            (joystick_2_state & CONTROLLER_WEST_BIT) ? 'W' : '-',
+            (joystick_2_state & CONTROLLER_EAST_BIT) ? 'E' : '-',
+            (joystick_2_state & CONTROLLER_FIRE_BIT) ? '1' : '-',
+            (keypad_2_state & CONTROLLER_FIRE_BIT) ? '2' : '-',
+            ColecoKeypadToCharacter(keypad_2_state & CONTROLLER_KEYPAD_MASK));
+        sleep_ms(100);
+    }
+}
+
 int main()
 {
     bi_decl(bi_program_description("Rocinante on Pico."));
@@ -540,12 +699,20 @@ int main()
     bi_decl(bi_1pin_with_name(NTSC_PIN_BASE + 5, "Composite bit 5"));
     bi_decl(bi_1pin_with_name(NTSC_PIN_BASE + 6, "Composite bit 6"));
     bi_decl(bi_1pin_with_name(NTSC_PIN_BASE + 7, "Composite bit 7"));
+    bi_decl(bi_1pin_with_name(JOYSTICK_KEYSELECT_PIN, "Controller KEYSELECT (green) pin"));
+    bi_decl(bi_1pin_with_name(JOYSTICK_JOYSELECT_PIN, "Controller JOYSELECT (gray) pin"));
+    bi_decl(bi_1pin_with_name(JOYSTICK_NORTH_PIN, "Controller NORTH pin"));
+    bi_decl(bi_1pin_with_name(JOYSTICK_SOUTH_PIN, "Controller SOUTH pin"));
+    bi_decl(bi_1pin_with_name(JOYSTICK_WEST_PIN, "Controller WEST pin"));
+    bi_decl(bi_1pin_with_name(JOYSTICK_EAST_PIN, "Controller EAST pin"));
+    bi_decl(bi_1pin_with_name(JOYSTICK_FIRE_PIN, "Controller FIRE pin"));
 
     const uint32_t requested_rate = 270000000; // 250000000; // 133000000;
     set_sys_clock_khz(requested_rate / 1000, 1);
 
     stdio_init_all(); // ? Why do I need this?  Don't do it in STM32 runtime
-    io_setup();
+    uart_setup();
+    InitializeControllerPins();
 
     FILE *fp = fopen("coleco/COLECO.ROM", "rb");
     printf("fp = %p\n", fp);
@@ -626,7 +793,7 @@ int main()
 
     printf("launching...\n");
 
-    while(1)
+    if(0) while(1)
     {
         static int thru = 0;
         sleep_ms(1);
@@ -647,12 +814,14 @@ int main()
     absolute_time_t started = get_absolute_time();
     uint64_t started_us = to_us_since_boot (started);
 
+    // TestControllers();
+
     const char *args[] = {
         "emulator",
-        "--playback-controllers",
-        "zaxxon.txt",
+        // "--playback-controllers",
+        // "smurf.txt", // "zaxxon.txt",
         "coleco/COLECO.ROM",
-        "zaxxon.col",
+        "smurf.col", // "zaxxon.col",
     };
     coleco_main(sizeof(args) / sizeof(args[0]), args); /* doesn't return */
 
