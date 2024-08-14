@@ -256,7 +256,7 @@ int NTSCModeInterlaced = 1;
 RoNTSCModeFillRowBufferFunc NTSCModeFillRowBuffer = DefaultFillRowBuffer;
 RoNTSCModeInitVideoMemoryFunc NTSCModeInitVideoMemory = NULL;
 RoNTSCModeNeedsColorburstFunc NTSCModeNeedsColorburst = DefaultNeedsColorburst;
-RoRowConfig NTSCRowConfig = RO_VIDEO_ROW_SAMPLES_912;
+RoRowConfig NTSCRowConfig = RO_VIDEO_ROW_SAMPLES_UNINITIALIZED;
 NTSCModeTiming *NTSCCurrentTiming;
 size_t NTSCRowSamples = 912;
 size_t NTSCAppRowSamples = 704;
@@ -408,6 +408,65 @@ void __isr NTSCRowISR()
 
 void NTSCEnableScanout()
 {
+    size_t size = 912;
+    uint32_t freq_needed = 14318180;
+    // size_t size = 1368;
+    // uint32_t freq_needed = 21477270;
+
+    // Set up PIO program for composite_out
+    PIO pio = pio0;
+    uint sm = pio_claim_unused_sm(pio0, true);
+    uint offset = pio_add_program(pio0, &composite_out_program);
+    composite_out_program_init(pio0, sm, offset, NTSC_PIN_BASE, NTSC_PIN_COUNT, freq_needed);
+
+    // Set up DMA channel from image buffer to FIFO, paced by FIFO empty
+    uint transfer_enum = DMA_SIZE_8;
+    int transfer_size = 1;
+
+    int stream_chan = dma_claim_unused_channel(true);
+    int restart_chan = NTSCScanout.irq_dma_chan = dma_claim_unused_channel(true);
+
+    dma_channel_config stream_config = dma_channel_get_default_config(stream_chan);
+    channel_config_set_transfer_data_size(&stream_config, transfer_enum);
+    channel_config_set_read_increment(&stream_config, true);
+    channel_config_set_write_increment(&stream_config, false);
+    channel_config_set_dreq(&stream_config, pio_get_dreq(pio, sm, true));
+    channel_config_set_high_priority(&stream_config, true);
+
+    // configure DMA channel 1 to restart DMA channel 0
+    dma_channel_config restart_config = dma_channel_get_default_config(restart_chan);
+    channel_config_set_transfer_data_size(&restart_config, DMA_SIZE_32);
+    channel_config_set_read_increment(&restart_config, false);
+    channel_config_set_write_increment(&restart_config, false);
+    channel_config_set_chain_to(&restart_config, stream_chan);
+    if(true) channel_config_set_chain_to(&stream_config, restart_chan);
+
+    dma_channel_configure(
+        stream_chan,           // DMA channel
+        &stream_config,             // channel_config
+        &pio->txf[sm],  // write address
+        NTSCRowDoubleBuffer[0],            // read address
+        size / transfer_size,  // size of frame in transfers
+        false           // don't start 
+    );
+
+    NTSCScanout.next_scanout_buffer = NTSCRowDoubleBuffer[1];
+
+    dma_channel_configure(
+        restart_chan,           // DMA channel
+        &restart_config,             // channel_config
+        &dma_hw->ch[stream_chan].read_addr,  // write address
+        &NTSCScanout.next_scanout_buffer,            // read address
+        1,  // size of frame in transfers
+        false           // don't start 
+    );
+
+    dma_channel_set_irq0_enabled(restart_chan, true);
+    irq_set_exclusive_handler(DMA_IRQ_0, NTSCRowISR);
+    irq_set_enabled(DMA_IRQ_0, true);
+
+    pio_sm_set_enabled(pio, sm, true);
+    dma_channel_start(stream_chan);
 }
 
 void NTSCDisableScanout()
@@ -471,6 +530,11 @@ void RoNTSCWaitFrame()
 
 void NTSCInit()
 {
+    for(int i = NTSC_PIN_BASE; i < NTSC_PIN_BASE + NTSC_PIN_COUNT; i++) {
+        gpio_set_slew_rate(i, GPIO_SLEW_RATE_FAST);
+        gpio_set_drive_strength(i, GPIO_DRIVE_STRENGTH_8MA);
+    }
+
     NTSCCalculateParameters();
 }
 
@@ -740,71 +804,6 @@ int main()
 
     printf("Rocinante on Pico, %ld clock rate\n", clock_get_hz(clk_sys));
 
-    size_t size = 912;
-    uint32_t freq_needed = 14318180;
-    // size_t size = 1368;
-    // uint32_t freq_needed = 21477270;
-
-    for(int i = NTSC_PIN_BASE; i < NTSC_PIN_BASE + NTSC_PIN_COUNT; i++) {
-        gpio_set_slew_rate(i, GPIO_SLEW_RATE_FAST);
-        gpio_set_drive_strength(i, GPIO_DRIVE_STRENGTH_8MA);
-    }
-
-    // Set up PIO program for composite_out
-    PIO pio = pio0;
-    uint sm = pio_claim_unused_sm(pio0, true);
-    uint offset = pio_add_program(pio0, &composite_out_program);
-    composite_out_program_init(pio0, sm, offset, NTSC_PIN_BASE, NTSC_PIN_COUNT, freq_needed);
-
-    // Set up DMA channel from image buffer to FIFO, paced by FIFO empty
-    uint transfer_enum = DMA_SIZE_8;
-    int transfer_size = 1;
-
-    int stream_chan = dma_claim_unused_channel(true);
-    int restart_chan = NTSCScanout.irq_dma_chan = dma_claim_unused_channel(true);
-
-    dma_channel_config stream_config = dma_channel_get_default_config(stream_chan);
-    channel_config_set_transfer_data_size(&stream_config, transfer_enum);
-    channel_config_set_read_increment(&stream_config, true);
-    channel_config_set_write_increment(&stream_config, false);
-    channel_config_set_dreq(&stream_config, pio_get_dreq(pio, sm, true));
-    channel_config_set_high_priority(&stream_config, true);
-
-    // configure DMA channel 1 to restart DMA channel 0
-    dma_channel_config restart_config = dma_channel_get_default_config(restart_chan);
-    channel_config_set_transfer_data_size(&restart_config, DMA_SIZE_32);
-    channel_config_set_read_increment(&restart_config, false);
-    channel_config_set_write_increment(&restart_config, false);
-    channel_config_set_chain_to(&restart_config, stream_chan);
-    if(true) channel_config_set_chain_to(&stream_config, restart_chan);
-
-    dma_channel_configure(
-        stream_chan,           // DMA channel
-        &stream_config,             // channel_config
-        &pio->txf[sm],  // write address
-        NTSCRowDoubleBuffer[0],            // read address
-        size / transfer_size,  // size of frame in transfers
-        false           // don't start 
-    );
-
-    NTSCScanout.next_scanout_buffer = NTSCRowDoubleBuffer[1];
-
-    dma_channel_configure(
-        restart_chan,           // DMA channel
-        &restart_config,             // channel_config
-        &dma_hw->ch[stream_chan].read_addr,  // write address
-        &NTSCScanout.next_scanout_buffer,            // read address
-        1,  // size of frame in transfers
-        false           // don't start 
-    );
-
-    dma_channel_set_irq0_enabled(restart_chan, true);
-    irq_set_exclusive_handler(DMA_IRQ_0, NTSCRowISR);
-    irq_set_enabled(DMA_IRQ_0, true);
-
-    pio_sm_set_enabled(pio, sm, true);
-    dma_channel_start(stream_chan);
-
     printf("initializing composite\n");
     NTSCInit();
 
@@ -820,7 +819,7 @@ int main()
         coleco_main(sizeof(args) / sizeof(args[0]), args); /* doesn't return */
     }
 
-    if(0)
+    if(1)
     {
         int previous_frame = 0;
         absolute_time_t started = get_absolute_time();
@@ -828,7 +827,7 @@ int main()
 
         RoTextMode();
         RoTextModeSetLine(0, 0, 0, "Text Mode");
-        RoTextModeSetLine(0, 1, 0, "event test...");
+        RoTextModeSetLine(1, 0, 0, "event test...");
 
         while(1)
         {
