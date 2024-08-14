@@ -9,14 +9,14 @@ composite_out_start:
 
 
 % c-sdk {
-static inline void composite_out_program_init(PIO pio, uint sm, uint offset, uint pin_base, uint pin_count, float freq) {
-
+static inline void composite_out_program_init(PIO pio, uint sm, uint offset, uint pin_base, uint pin_count, float freq)
+{
     pio_sm_config c = composite_out_program_get_default_config(offset);
 
     sm_config_set_out_pins(&c, pin_base, pin_count);
 
     float clkdiv = clock_get_hz(clk_sys) / (2 * freq);
-    printf("clkdiv = %d.%03d\n", (int)clkdiv, (int)(1000 * (clkdiv - (int)clkdiv)));
+    printf("system clock %ld, clkdiv = %d.%03d\n", clock_get_hz(clk_sys), (int)clkdiv, (int)(1000 * (clkdiv - (int)clkdiv)));
     sm_config_set_clkdiv(&c, clkdiv);
 
     for(int i = pin_base; i < pin_base + pin_count; i++)
