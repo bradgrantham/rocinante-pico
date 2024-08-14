@@ -258,9 +258,9 @@ RoNTSCModeInitVideoMemoryFunc NTSCModeInitVideoMemory = NULL;
 RoNTSCModeNeedsColorburstFunc NTSCModeNeedsColorburst = DefaultNeedsColorburst;
 int NTSCRowConfig = RO_VIDEO_ROW_SAMPLES_UNINITIALIZED;
 NTSCModeTiming *NTSCCurrentTiming;
-size_t NTSCRowSamples = 912;
-size_t NTSCAppRowSamples = 704;
-size_t NTSCAppRowOffset = 164;
+size_t NTSCRowSamples = 0;
+size_t NTSCAppRowSamples = 0;
+size_t NTSCAppRowOffset = 0;
 uint8_t NTSCVideoMemory[65536];
 
 typedef struct NTSCScanoutVars
@@ -274,7 +274,7 @@ typedef struct NTSCScanoutVars
     int restart_chan;
 } NTSCScanoutVars;
 
-NTSCScanoutVars NTSCScanout;
+NTSCScanoutVars ntsc;
 
 // NTSC interlaced is made up of "odd" and "even" fields.  For NTSC, the first field is
 // odd, which means it's #1.
@@ -398,23 +398,23 @@ void NTSCFillRowBuffer(NTSCModeTiming *timing, int frameNumber, int lineNumber, 
 
 void __isr NTSCRowISR()
 {
-    dma_hw->ints0 = 1u << NTSCScanout.irq_dma_chan;
+    dma_hw->ints0 = 1u << ntsc.irq_dma_chan;
     NTSCRowNumber++;
     if(NTSCRowNumber >= 525) {
         NTSCRowNumber = 0;
         NTSCFrameNumber++;
     }
-    NTSCScanout.next_scanout_buffer = NTSCRowDoubleBuffer[(NTSCRowNumber + 1) % 2];
+    ntsc.next_scanout_buffer = NTSCRowDoubleBuffer[(NTSCRowNumber + 1) % 2];
     if(NTSCModeFuncsValid) 
     {
-        NTSCFillRowBuffer(NTSCCurrentTiming, NTSCFrameNumber, NTSCRowNumber, NTSCScanout.next_scanout_buffer);
+        NTSCFillRowBuffer(NTSCCurrentTiming, NTSCFrameNumber, NTSCRowNumber, ntsc.next_scanout_buffer);
     }
 }
 
 void NTSCEnableScanout()
 {
-    size_t size = NTSCRowSamples;
     uint32_t freq_needed;
+
     switch(NTSCRowConfig) 
     {
         case RO_VIDEO_ROW_SAMPLES_912:
@@ -429,53 +429,52 @@ void NTSCEnableScanout()
             break;
     }
 
-    composite_out_program_init(NTSCScanout.pio, NTSCScanout.sm, NTSCScanout.program_offset, NTSC_PIN_BASE, NTSC_PIN_COUNT, freq_needed);
+    composite_out_program_init(ntsc.pio, ntsc.sm, ntsc.program_offset, NTSC_PIN_BASE, NTSC_PIN_COUNT, freq_needed);
 
     // Set up DMA channel from image buffer to FIFO, paced by FIFO empty
-    uint transfer_enum = DMA_SIZE_8;
-    int transfer_size = 1;
+    const uint transfer_enum = DMA_SIZE_8;
+    const int transfer_size = 1;
 
-    dma_channel_config stream_config = dma_channel_get_default_config(NTSCScanout.stream_chan);
+    dma_channel_config stream_config = dma_channel_get_default_config(ntsc.stream_chan);
     channel_config_set_transfer_data_size(&stream_config, transfer_enum);
     channel_config_set_read_increment(&stream_config, true);
     channel_config_set_write_increment(&stream_config, false);
-    channel_config_set_dreq(&stream_config, pio_get_dreq(NTSCScanout.pio, NTSCScanout.sm, true));
+    channel_config_set_dreq(&stream_config, pio_get_dreq(ntsc.pio, ntsc.sm, true));
     channel_config_set_high_priority(&stream_config, true);
 
-    // configure DMA channel 1 to restart DMA channel 0
-    dma_channel_config restart_config = dma_channel_get_default_config(NTSCScanout.restart_chan);
+    dma_channel_config restart_config = dma_channel_get_default_config(ntsc.restart_chan);
     channel_config_set_transfer_data_size(&restart_config, DMA_SIZE_32);
     channel_config_set_read_increment(&restart_config, false);
     channel_config_set_write_increment(&restart_config, false);
-    channel_config_set_chain_to(&restart_config, NTSCScanout.stream_chan);
-    if(true) channel_config_set_chain_to(&stream_config, NTSCScanout.restart_chan);
+    channel_config_set_chain_to(&restart_config, ntsc.stream_chan);
+    if(true) channel_config_set_chain_to(&stream_config, ntsc.restart_chan);
 
     dma_channel_configure(
-        NTSCScanout.stream_chan,           // DMA channel
+        ntsc.stream_chan,           // DMA channel
         &stream_config,             // channel_config
-        &NTSCScanout.pio->txf[NTSCScanout.sm],  // write address
+        &ntsc.pio->txf[ntsc.sm],  // write address
         NTSCRowDoubleBuffer[0],            // read address
-        size / transfer_size,  // size of frame in transfers
+        NTSCRowSamples / transfer_size,  // size of frame in transfers
         false           // don't start 
     );
 
-    NTSCScanout.next_scanout_buffer = NTSCRowDoubleBuffer[1];
+    ntsc.next_scanout_buffer = NTSCRowDoubleBuffer[1];
 
     dma_channel_configure(
-        NTSCScanout.restart_chan,           // DMA channel
+        ntsc.restart_chan,           // DMA channel
         &restart_config,             // channel_config
-        &dma_hw->ch[NTSCScanout.stream_chan].read_addr,  // write address
-        &NTSCScanout.next_scanout_buffer,            // read address
+        &dma_hw->ch[ntsc.stream_chan].read_addr,  // write address
+        &ntsc.next_scanout_buffer,            // read address
         1,  // size of frame in transfers
         false           // don't start 
     );
 
-    dma_channel_set_irq0_enabled(NTSCScanout.restart_chan, true);
+    dma_channel_set_irq0_enabled(ntsc.restart_chan, true);
     irq_set_exclusive_handler(DMA_IRQ_0, NTSCRowISR);
     irq_set_enabled(DMA_IRQ_0, true);
 
-    pio_sm_set_enabled(NTSCScanout.pio, NTSCScanout.sm, true);
-    dma_channel_start(NTSCScanout.stream_chan);
+    pio_sm_set_enabled(ntsc.pio, ntsc.sm, true);
+    dma_channel_start(ntsc.stream_chan);
 }
 
 void NTSCDisableScanout()
@@ -544,11 +543,11 @@ void NTSCInit()
         gpio_set_drive_strength(i, GPIO_DRIVE_STRENGTH_8MA);
     }
     // Set up PIO program for composite_out
-    NTSCScanout.pio = pio0;
-    NTSCScanout.sm = pio_claim_unused_sm(NTSCScanout.pio, true);
-    NTSCScanout.program_offset = pio_add_program(NTSCScanout.pio, &composite_out_program);
-    NTSCScanout.stream_chan = dma_claim_unused_channel(true);
-    NTSCScanout.restart_chan = NTSCScanout.irq_dma_chan = dma_claim_unused_channel(true);
+    ntsc.pio = pio0;
+    ntsc.sm = pio_claim_unused_sm(ntsc.pio, true);
+    ntsc.program_offset = pio_add_program(ntsc.pio, &composite_out_program);
+    ntsc.stream_chan = dma_claim_unused_channel(true);
+    ntsc.restart_chan = ntsc.irq_dma_chan = dma_claim_unused_channel(true);
 
     NTSCCalculateParameters();
 }
@@ -834,7 +833,7 @@ int main()
         coleco_main(sizeof(args) / sizeof(args[0]), args); /* doesn't return */
     }
 
-    if(1)
+    if(0)
     {
         int previous_frame = 0;
         absolute_time_t started = get_absolute_time();
