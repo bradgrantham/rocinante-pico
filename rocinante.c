@@ -256,7 +256,7 @@ int NTSCModeInterlaced = 1;
 RoNTSCModeFillRowBufferFunc NTSCModeFillRowBuffer = DefaultFillRowBuffer;
 RoNTSCModeInitVideoMemoryFunc NTSCModeInitVideoMemory = NULL;
 RoNTSCModeNeedsColorburstFunc NTSCModeNeedsColorburst = DefaultNeedsColorburst;
-RoRowConfig NTSCRowConfig = RO_VIDEO_ROW_SAMPLES_UNINITIALIZED;
+int NTSCRowConfig = RO_VIDEO_ROW_SAMPLES_UNINITIALIZED;
 NTSCModeTiming *NTSCCurrentTiming;
 size_t NTSCRowSamples = 912;
 size_t NTSCAppRowSamples = 704;
@@ -267,6 +267,9 @@ typedef struct NTSCScanoutVars
 {
     int irq_dma_chan;
     void *next_scanout_buffer;
+    PIO pio;
+    uint sm;
+    uint program_offset;
 } NTSCScanoutVars;
 
 NTSCScanoutVars NTSCScanout;
@@ -408,16 +411,23 @@ void __isr NTSCRowISR()
 
 void NTSCEnableScanout()
 {
-    size_t size = 912;
-    uint32_t freq_needed = 14318180;
-    // size_t size = 1368;
-    // uint32_t freq_needed = 21477270;
+    size_t size = NTSCRowSamples;
+    uint32_t freq_needed;
+    switch(NTSCRowConfig) 
+    {
+        case RO_VIDEO_ROW_SAMPLES_912:
+            freq_needed = 14318180;
+            break;
+        case RO_VIDEO_ROW_SAMPLES_1368:
+            freq_needed = 21477270;
+            break;
+        default: case RO_VIDEO_ROW_SAMPLES_UNINITIALIZED:
+            printf("ROW_SAMPLES uninitialized!\n");
+            for(;;);
+            break;
+    }
 
-    // Set up PIO program for composite_out
-    PIO pio = pio0;
-    uint sm = pio_claim_unused_sm(pio0, true);
-    uint offset = pio_add_program(pio0, &composite_out_program);
-    composite_out_program_init(pio0, sm, offset, NTSC_PIN_BASE, NTSC_PIN_COUNT, freq_needed);
+    composite_out_program_init(NTSCScanout.pio, NTSCScanout.sm, NTSCScanout.program_offset, NTSC_PIN_BASE, NTSC_PIN_COUNT, freq_needed);
 
     // Set up DMA channel from image buffer to FIFO, paced by FIFO empty
     uint transfer_enum = DMA_SIZE_8;
@@ -430,7 +440,7 @@ void NTSCEnableScanout()
     channel_config_set_transfer_data_size(&stream_config, transfer_enum);
     channel_config_set_read_increment(&stream_config, true);
     channel_config_set_write_increment(&stream_config, false);
-    channel_config_set_dreq(&stream_config, pio_get_dreq(pio, sm, true));
+    channel_config_set_dreq(&stream_config, pio_get_dreq(NTSCScanout.pio, NTSCScanout.sm, true));
     channel_config_set_high_priority(&stream_config, true);
 
     // configure DMA channel 1 to restart DMA channel 0
@@ -444,7 +454,7 @@ void NTSCEnableScanout()
     dma_channel_configure(
         stream_chan,           // DMA channel
         &stream_config,             // channel_config
-        &pio->txf[sm],  // write address
+        &NTSCScanout.pio->txf[NTSCScanout.sm],  // write address
         NTSCRowDoubleBuffer[0],            // read address
         size / transfer_size,  // size of frame in transfers
         false           // don't start 
@@ -465,7 +475,7 @@ void NTSCEnableScanout()
     irq_set_exclusive_handler(DMA_IRQ_0, NTSCRowISR);
     irq_set_enabled(DMA_IRQ_0, true);
 
-    pio_sm_set_enabled(pio, sm, true);
+    pio_sm_set_enabled(NTSCScanout.pio, NTSCScanout.sm, true);
     dma_channel_start(stream_chan);
 }
 
@@ -534,6 +544,10 @@ void NTSCInit()
         gpio_set_slew_rate(i, GPIO_SLEW_RATE_FAST);
         gpio_set_drive_strength(i, GPIO_DRIVE_STRENGTH_8MA);
     }
+    // Set up PIO program for composite_out
+    NTSCScanout.pio = pio0;
+    NTSCScanout.sm = pio_claim_unused_sm(NTSCScanout.pio, true);
+    NTSCScanout.program_offset = pio_add_program(NTSCScanout.pio, &composite_out_program);
 
     NTSCCalculateParameters();
 }
