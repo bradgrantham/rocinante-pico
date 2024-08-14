@@ -14,6 +14,7 @@
 
 #include "byte_queue.h"
 #include "rocinante.h"
+#include "text-mode.h"
 
 extern const uint8_t buffer[];
 
@@ -38,6 +39,15 @@ uint8_t NTSCSyncPorch;
 uint8_t NTSCBlack;
 uint8_t NTSCWhite;
 
+uint8_t NTSCColorburst0;
+uint8_t NTSCColorburst60;
+uint8_t NTSCColorburst90;
+uint8_t NTSCColorburst120;
+uint8_t NTSCColorburst180;
+uint8_t NTSCColorburst240;
+uint8_t NTSCColorburst270;
+uint8_t NTSCColorburst300;
+
 typedef struct NTSCModeTiming
 {
     int line_clocks;
@@ -49,16 +59,6 @@ typedef struct NTSCModeTiming
     int colorburst_offset;
 } NTSCModeTiming;
 
-uint8_t NTSCColorburst0;
-uint8_t NTSCColorburst90;
-uint8_t NTSCColorburst180;
-uint8_t NTSCColorburst270;
-
-uint8_t NTSCColorburst60;
-uint8_t NTSCColorburst120;
-uint8_t NTSCColorburst240;
-uint8_t NTSCColorburst300;
-
 NTSCModeTiming NTSCTiming912, NTSCTiming1368;
 
 void NTSCCalculateLineClocks(NTSCModeTiming* timing, int samples)
@@ -69,7 +69,7 @@ void NTSCCalculateLineClocks(NTSCModeTiming* timing, int samples)
     timing->back_porch = timing->line_clocks * NTSC_BACKPORCH;
     timing->eq_pulse = timing->line_clocks * NTSC_EQ_PULSE_INTERVAL;
     timing->vsync = timing->line_clocks * NTSC_VSYNC_BLANK_INTERVAL;
-    timing->colorburst_offset = (samples == 912) ? 76 : 114; // Magic numbers preventing generalization
+    timing->colorburst_offset = (samples == 912) ? 76 : 114; // XXX Magic numbers preventing generalization
 }
 
 void NTSCCalculateParameters()
@@ -88,11 +88,16 @@ void NTSCCalculateParameters()
     // composite the voltages are reversed, so the waveform becomes -sine.
     // Scale amplitude of wave added to DC by .6 to match seen from other
     // sources on oscilloscope
+
+    // These are at intervals of 90 degrees - these values replicate
+    // the colorburst at 14.31818MHz
     NTSCColorburst0 = NTSCSyncPorch;
     NTSCColorburst90 = NTSCSyncPorch - .6 * NTSCSyncPorch;
     NTSCColorburst180 = NTSCSyncPorch;
     NTSCColorburst270 = NTSCSyncPorch + .6 * NTSCSyncPorch;
 
+    // These, plus the 0 and 180 degree values above, are intervals of 60 degrees
+    // these values replicate the colorburst at 21.477270
     NTSCColorburst60 = NTSCSyncPorch - .866 * .6 * NTSCSyncPorch;
     NTSCColorburst120 = NTSCSyncPorch - .866 * .6 * NTSCSyncPorch;
     NTSCColorburst240 = NTSCSyncPorch + .866 * .6 * NTSCSyncPorch;
@@ -174,6 +179,40 @@ void NTSCFillBlankLine(NTSCModeTiming *timing, unsigned char *rowBuffer, int wit
     }
 }
 
+void print_sample(uint8_t sample)
+{
+    if(sample <= NTSCSyncTip + 1)
+    {
+        putchar(' ');
+    }
+    else if(sample <= NTSCSyncPorch + 1)
+    {
+        putchar('_');
+    }
+    else if(sample <= NTSCBlack)
+    {
+        putchar('.');
+    }
+    else if(sample <= NTSCWhite)
+    {
+        putchar(".,-+^`"[6 * (sample - NTSCBlack) / (NTSCWhite - NTSCBlack)]);
+    }
+    else
+    {
+        putchar('*');
+    }
+}
+
+void dump_scanline(int clocks, int chars, const uint8_t *samples)
+{
+    for(int i = 0; i < chars; i++)
+    {
+        int where = i * clocks / chars;
+        print_sample(samples[where]);
+    }
+    puts("");
+}
+
 void NTSCGenerateLineBuffers(NTSCModeTiming *timing)
 {
     // one line = (1 / 3579545) * (455/2)
@@ -183,10 +222,15 @@ void NTSCGenerateLineBuffers(NTSCModeTiming *timing)
     // pixels is (1 - .165) * (1 / 15734) / (1 / 3579545) = 189.96568418711380557696 cycles (190)
     //     280 cycles at double clock
 
+    printf("generate line buffers, clocks = %d\n", timing->line_clocks);
     NTSCFillEqPulseLine(timing, NTSCEqSyncPulseLine);
     NTSCFillVSyncLine(timing, NTSCVSyncLine);
     NTSCFillBlankLine(timing, NTSCBlankLineBW, 0);
     NTSCFillBlankLine(timing, NTSCBlankLineColor, 1);
+    // dump_scanline(timing->line_clocks, 140, NTSCEqSyncPulseLine);
+    // dump_scanline(timing->line_clocks, 140, NTSCVSyncLine);
+    // dump_scanline(timing->line_clocks, 140, NTSCBlankLineBW);
+    // dump_scanline(timing->line_clocks, 140, NTSCBlankLineColor);
 }
 
 int DefaultNeedsColorburst()
@@ -200,6 +244,8 @@ void DefaultFillRowBuffer(int frameIndex, int rowNumber, size_t maxSamples, uint
         memset(rowBuffer, (NTSCBlack + NTSCWhite) / 2, maxSamples);
     }
 }
+
+enum { RO_VIDEO_ROW_SAMPLES_UNINITIALIZED = 0, };
 
 uint8_t NTSCRowDoubleBuffer[2][ROW_SAMPLE_STORAGE_MAX];
 volatile int NTSCRowNumber = 0;
@@ -217,67 +263,16 @@ size_t NTSCAppRowSamples = 704;
 size_t NTSCAppRowOffset = 164;
 uint8_t NTSCVideoMemory[65536];
 
-void RoNTSCSetMode(int interlaced, RoRowConfig row_config, RoNTSCModeInitVideoMemoryFunc initFunc, RoNTSCModeFillRowBufferFunc fillBufferFunc, RoNTSCModeNeedsColorburstFunc needsColorBurstFunc)
+typedef struct NTSCScanoutVars
 {
-    if((NTSCModeInterlaced == interlaced) &&
-        (initFunc == NTSCModeInitVideoMemory) &&
-        (fillBufferFunc == NTSCModeFillRowBuffer) &&
-        (needsColorBurstFunc == NTSCModeNeedsColorburst))
-    {
-        return;
-    }
+    int irq_dma_chan;
+    void *next_scanout_buffer;
+} NTSCScanoutVars;
 
-    NTSCModeFuncsValid = 0;
-    // XXX handle row_config != previous row_config by tearing down NTSC scanout, changing clock, and restarting NTSC scanout
-    NTSCRowConfig = row_config;
-    switch(NTSCRowConfig) 
-    {
-        case RO_VIDEO_ROW_SAMPLES_912:
-            NTSCRowSamples = 912;
-            NTSCAppRowSamples = 704;
-            NTSCAppRowOffset = 164; // ?? Why is this a magic number different from (912 - 704) / 2?  HSYNC?  Porch?  Etc?
-            NTSCCurrentTiming = &NTSCTiming912;
-            break;
-        case RO_VIDEO_ROW_SAMPLES_1368:
-            NTSCRowSamples = 1368;
-            NTSCAppRowSamples = 1056;
-            NTSCAppRowOffset = 246; // ?? Why is this a magic number different from (1368 - 1056) / 2?  HSYNC?  Porch?  Etc?
-            NTSCCurrentTiming = &NTSCTiming1368;
-            break;
-    }
-    NTSCGenerateLineBuffers(NTSCCurrentTiming);
-    NTSCModeNeedsColorburst = needsColorBurstFunc;
-    NTSCModeInitVideoMemory = initFunc;
-    NTSCModeFillRowBuffer = fillBufferFunc;
-    NTSCModeInterlaced = interlaced;
-    initFunc(NTSCVideoMemory, sizeof(NTSCVideoMemory), NTSCBlack, NTSCWhite);
-    NTSCRowNumber = 0;
-    NTSCFrameNumber = 0;
-    NTSCModeFuncsValid = 1;
-}
+NTSCScanoutVars NTSCScanout;
 
 // NTSC interlaced is made up of "odd" and "even" fields.  For NTSC, the first field is
 // odd, which means it's #1.
-
-void memcpy_fast_16byte_multiple(void* dst_, const void* src_, size_t size)
-{
-    const uint32_t* src = (uint32_t*)src_;
-    uint32_t* dst = (uint32_t*)dst_;
-#pragma GCC unroll 8
-    for(size_t i = 0; i < size / sizeof(*dst); i += 4 /* i++ */) {
-        uint32_t t0 = src[0];
-        uint32_t t1 = src[1];
-        uint32_t t2 = src[2];
-        uint32_t t3 = src[3];
-        dst[0] = t0;
-        dst[1] = t1;
-        dst[2] = t2;
-        dst[3] = t3;
-        src += 4;
-        dst += 4;
-        // *dst++ = *src++;
-    }
-}
 
 void NTSCFillRowBuffer(NTSCModeTiming *timing, int frameNumber, int lineNumber, unsigned char *rowBuffer)
 {
@@ -396,6 +391,71 @@ void NTSCFillRowBuffer(NTSCModeTiming *timing, int frameNumber, int lineNumber, 
     }
 }
 
+void __isr NTSCRowISR()
+{
+    dma_hw->ints0 = 1u << NTSCScanout.irq_dma_chan;
+    NTSCRowNumber++;
+    if(NTSCRowNumber >= 525) {
+        NTSCRowNumber = 0;
+        NTSCFrameNumber++;
+    }
+    NTSCScanout.next_scanout_buffer = NTSCRowDoubleBuffer[(NTSCRowNumber + 1) % 2];
+    if(NTSCModeFuncsValid) 
+    {
+        NTSCFillRowBuffer(NTSCCurrentTiming, NTSCFrameNumber, NTSCRowNumber, NTSCScanout.next_scanout_buffer);
+    }
+}
+
+void NTSCEnableScanout()
+{
+}
+
+void NTSCDisableScanout()
+{
+}
+
+void RoNTSCSetMode(int interlaced, RoRowConfig row_config, RoNTSCModeInitVideoMemoryFunc initFunc, RoNTSCModeFillRowBufferFunc fillBufferFunc, RoNTSCModeNeedsColorburstFunc needsColorBurstFunc)
+{
+    if((NTSCModeInterlaced == interlaced) &&
+        (initFunc == NTSCModeInitVideoMemory) &&
+        (fillBufferFunc == NTSCModeFillRowBuffer) &&
+        (needsColorBurstFunc == NTSCModeNeedsColorburst) &&
+        (row_config == NTSCRowConfig))
+    {
+        return;
+    }
+
+    NTSCModeFuncsValid = 0;
+    NTSCDisableScanout();
+    // XXX handle row_config != previous row_config by tearing down NTSC scanout, changing clock, and restarting NTSC scanout
+    NTSCRowConfig = row_config;
+    switch(NTSCRowConfig) 
+    {
+        case RO_VIDEO_ROW_SAMPLES_912:
+            NTSCRowSamples = 912;
+            NTSCAppRowSamples = 704;
+            NTSCAppRowOffset = 164; // ?? Why is this a magic number different from (912 - 704) / 2?  HSYNC?  Porch?  Etc?
+            NTSCCurrentTiming = &NTSCTiming912;
+            break;
+        case RO_VIDEO_ROW_SAMPLES_1368:
+            NTSCRowSamples = 1368;
+            NTSCAppRowSamples = 1056;
+            NTSCAppRowOffset = 246; // ?? Why is this a magic number different from (1368 - 1056) / 2?  HSYNC?  Porch?  Etc?
+            NTSCCurrentTiming = &NTSCTiming1368;
+            break;
+    }
+    NTSCGenerateLineBuffers(NTSCCurrentTiming);
+    NTSCModeNeedsColorburst = needsColorBurstFunc;
+    NTSCModeInitVideoMemory = initFunc;
+    NTSCModeFillRowBuffer = fillBufferFunc;
+    NTSCModeInterlaced = interlaced;
+    initFunc(NTSCVideoMemory, sizeof(NTSCVideoMemory), NTSCBlack, NTSCWhite);
+    NTSCRowNumber = 0;
+    NTSCFrameNumber = 0;
+    NTSCEnableScanout();
+    NTSCModeFuncsValid = 1;
+}
+
 void RoNTSCWaitFrame()
 {
     // NTSC won't actually go lineNumber >= 525...
@@ -409,52 +469,10 @@ void RoNTSCWaitFrame()
 
 // END copied from STM32F Rocinante Core/Src/main
 
-int irq_dma_chan;
-const void* buffer_start;
-
-void *next_scanout_buffer;
-
-void __isr dma_handler()
-{
-    dma_hw->ints0 = 1u << irq_dma_chan;
-    NTSCRowNumber++;
-    if(NTSCRowNumber >= 525) {
-        NTSCRowNumber = 0;
-        NTSCFrameNumber++;
-    }
-    next_scanout_buffer = NTSCRowDoubleBuffer[(NTSCRowNumber + 1) % 2];
-    if(NTSCModeFuncsValid) 
-    {
-        NTSCFillRowBuffer(NTSCCurrentTiming, NTSCFrameNumber, NTSCRowNumber, next_scanout_buffer);
-    }
-}
-
 void NTSCInit()
 {
     NTSCCalculateParameters();
 }
-
-int init_video(void* buffer, uint32_t bufferSize, uint8_t blackvalue, uint8_t whitevalue)
-{
-    return 1;
-}
-
-void fillrow(int frameIndex, int rowNumber, size_t maxSamples, uint8_t* rowBuffer)
-{
-    // int row = rowNumber - 17;
-    // re-interlace
-    if(rowNumber % 2 == 0) 
-    {
-        rowNumber = rowNumber / 2;
-    }
-    else
-    {
-        rowNumber = 263 + rowNumber / 2;
-    }
-    memcpy(rowBuffer, buffer + rowNumber * 912 + 164, 704); // maxSamples);
-}
-
-int coleco_main(int argc, const char **argv);
 
 uint32_t RoGetMillis()
 {
@@ -687,6 +705,9 @@ void TestControllers()
     }
 }
 
+int launcher_main(int argc, const char **argv);
+int coleco_main(int argc, const char **argv);
+
 int main()
 {
     bi_decl(bi_program_description("Rocinante on Pico."));
@@ -714,19 +735,15 @@ int main()
     uart_setup();
     InitializeControllerPins();
 
-    FILE *fp = fopen("coleco/COLECO.ROM", "rb");
-    printf("fp = %p\n", fp);
-    fclose(fp);
-
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
 
     printf("Rocinante on Pico, %ld clock rate\n", clock_get_hz(clk_sys));
 
-    // size_t size = 912;
-    // uint32_t freq_needed = 14318180;
-    size_t size = 1368;
-    uint32_t freq_needed = 21477270;
+    size_t size = 912;
+    uint32_t freq_needed = 14318180;
+    // size_t size = 1368;
+    // uint32_t freq_needed = 21477270;
 
     for(int i = NTSC_PIN_BASE; i < NTSC_PIN_BASE + NTSC_PIN_COUNT; i++) {
         gpio_set_slew_rate(i, GPIO_SLEW_RATE_FAST);
@@ -744,7 +761,7 @@ int main()
     int transfer_size = 1;
 
     int stream_chan = dma_claim_unused_channel(true);
-    int restart_chan = irq_dma_chan = dma_claim_unused_channel(true);
+    int restart_chan = NTSCScanout.irq_dma_chan = dma_claim_unused_channel(true);
 
     dma_channel_config stream_config = dma_channel_get_default_config(stream_chan);
     channel_config_set_transfer_data_size(&stream_config, transfer_enum);
@@ -770,19 +787,19 @@ int main()
         false           // don't start 
     );
 
-    next_scanout_buffer = NTSCRowDoubleBuffer[1];
+    NTSCScanout.next_scanout_buffer = NTSCRowDoubleBuffer[1];
 
     dma_channel_configure(
         restart_chan,           // DMA channel
         &restart_config,             // channel_config
         &dma_hw->ch[stream_chan].read_addr,  // write address
-        &next_scanout_buffer,            // read address
+        &NTSCScanout.next_scanout_buffer,            // read address
         1,  // size of frame in transfers
         false           // don't start 
     );
 
     dma_channel_set_irq0_enabled(restart_chan, true);
-    irq_set_exclusive_handler(DMA_IRQ_0, dma_handler);
+    irq_set_exclusive_handler(DMA_IRQ_0, NTSCRowISR);
     irq_set_enabled(DMA_IRQ_0, true);
 
     pio_sm_set_enabled(pio, sm, true);
@@ -793,53 +810,58 @@ int main()
 
     printf("launching...\n");
 
-    if(0) while(1)
+    if(0)
     {
-        static int thru = 0;
-        sleep_ms(1);
-        //int is_empty = queue_isempty(&uart_input_queue);
-        //if(!is_empty) {
-            //unsigned char c = queue_deq(&uart_input_queue);
-            //printf("got this key: \"%c\"\n", c);
-        //}
-        extern void CheckEvents(void);
-        CheckEvents();
-        if(thru++ % 1000 == 0) {
-            printf("through %d loops\n", thru);
-        }
+        const char *args[] = {
+            "emulator",
+            "coleco/COLECO.ROM",
+            "smurf.col", // "zaxxon.col",
+        };
+        coleco_main(sizeof(args) / sizeof(args[0]), args); /* doesn't return */
     }
 
-// need an IRQ
-    int previous_frame = 0;
-    absolute_time_t started = get_absolute_time();
-    uint64_t started_us = to_us_since_boot (started);
+    if(0)
+    {
+        int previous_frame = 0;
+        absolute_time_t started = get_absolute_time();
+        uint64_t started_us = to_us_since_boot (started);
+
+        RoTextMode();
+        RoTextModeSetLine(0, 0, 0, "Text Mode");
+        RoTextModeSetLine(0, 1, 0, "event test...");
+
+        while(1)
+        {
+            static int thru = 0;
+            sleep_ms(1);
+            extern void CheckEvents(void);
+            CheckEvents();
+            if(thru++ % 1000 == 0) {
+                printf("through %d loops\n", thru);
+            }
+            if(previous_frame + 30 < NTSCFrameNumber)
+            {
+                absolute_time_t ended = get_absolute_time();
+                uint64_t ended_us = to_us_since_boot (ended);
+                uint64_t us_per_frame = (ended_us - started_us) / 30;
+                uint64_t ms = us_per_frame / 1000;
+                uint64_t frac = us_per_frame - ms * 1000;
+                printf("(%llu us) %llu.%03llu ms per frame, expected 33.44\n", us_per_frame, ms, frac);
+                started = ended;
+                started_us = ended_us;
+                previous_frame = NTSCFrameNumber;
+            }
+            gpio_put(LED_PIN, (NTSCFrameNumber % 30) < 15);
+        }
+    }
 
     // TestControllers();
 
-    const char *args[] = {
-        "emulator",
-        // "--playback-controllers",
-        // "smurf.txt", // "zaxxon.txt",
-        "coleco/COLECO.ROM",
-        "smurf.col", // "zaxxon.col",
-    };
-    coleco_main(sizeof(args) / sizeof(args[0]), args); /* doesn't return */
-
-    while(1)
     {
-        sleep_ms(1);
-        if(previous_frame + 30 < NTSCFrameNumber)
-        {
-            absolute_time_t ended = get_absolute_time();
-            uint64_t ended_us = to_us_since_boot (ended);
-            uint64_t us_per_frame = (ended_us - started_us) / 30;
-            uint64_t ms = us_per_frame / 1000;
-            uint64_t frac = us_per_frame - ms * 1000;
-            printf("(%llu us) %llu.%03llu ms per frame, expected 33.44\n", us_per_frame, ms, frac);
-            started = ended;
-            started_us = ended_us;
-            previous_frame = NTSCFrameNumber;
-        }
-        gpio_put(LED_PIN, (NTSCFrameNumber % 30) < 15);
+        const char *args[] = {
+            "launcher",
+        };
+        launcher_main(sizeof(args) / sizeof(args[0]), args);
     }
+
 }
