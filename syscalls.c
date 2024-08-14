@@ -31,11 +31,9 @@ struct RomFile {
 };
 
 const struct RomFile rom_files[] = {
-    { "zaxxon.txt", zaxxon_txt_bytes, zaxxon_txt_length },
-    { "zaxxon.col", zaxxon_col_bytes, zaxxon_col_length },
+    { "coleco/Zaxxon (1982) (Sega).col", zaxxon_col_bytes, zaxxon_col_length },
+    { "coleco/Smurf - Rescue in Gargamel's Castle (1982).col", smurf_col_bytes, smurf_col_length },
     { "coleco/COLECO.ROM", coleco_rom_bytes, coleco_rom_length },
-    { "smurf.col", smurf_col_bytes, smurf_col_length },
-    { "smurf.txt", smurf_txt_bytes, smurf_txt_length },
 };
 
 #undef errno
