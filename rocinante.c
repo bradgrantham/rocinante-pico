@@ -270,6 +270,8 @@ typedef struct NTSCScanoutVars
     PIO pio;
     uint sm;
     uint program_offset;
+    int stream_chan;
+    int restart_chan;
 } NTSCScanoutVars;
 
 NTSCScanoutVars NTSCScanout;
@@ -433,10 +435,7 @@ void NTSCEnableScanout()
     uint transfer_enum = DMA_SIZE_8;
     int transfer_size = 1;
 
-    int stream_chan = dma_claim_unused_channel(true);
-    int restart_chan = NTSCScanout.irq_dma_chan = dma_claim_unused_channel(true);
-
-    dma_channel_config stream_config = dma_channel_get_default_config(stream_chan);
+    dma_channel_config stream_config = dma_channel_get_default_config(NTSCScanout.stream_chan);
     channel_config_set_transfer_data_size(&stream_config, transfer_enum);
     channel_config_set_read_increment(&stream_config, true);
     channel_config_set_write_increment(&stream_config, false);
@@ -444,15 +443,15 @@ void NTSCEnableScanout()
     channel_config_set_high_priority(&stream_config, true);
 
     // configure DMA channel 1 to restart DMA channel 0
-    dma_channel_config restart_config = dma_channel_get_default_config(restart_chan);
+    dma_channel_config restart_config = dma_channel_get_default_config(NTSCScanout.restart_chan);
     channel_config_set_transfer_data_size(&restart_config, DMA_SIZE_32);
     channel_config_set_read_increment(&restart_config, false);
     channel_config_set_write_increment(&restart_config, false);
-    channel_config_set_chain_to(&restart_config, stream_chan);
-    if(true) channel_config_set_chain_to(&stream_config, restart_chan);
+    channel_config_set_chain_to(&restart_config, NTSCScanout.stream_chan);
+    if(true) channel_config_set_chain_to(&stream_config, NTSCScanout.restart_chan);
 
     dma_channel_configure(
-        stream_chan,           // DMA channel
+        NTSCScanout.stream_chan,           // DMA channel
         &stream_config,             // channel_config
         &NTSCScanout.pio->txf[NTSCScanout.sm],  // write address
         NTSCRowDoubleBuffer[0],            // read address
@@ -463,20 +462,20 @@ void NTSCEnableScanout()
     NTSCScanout.next_scanout_buffer = NTSCRowDoubleBuffer[1];
 
     dma_channel_configure(
-        restart_chan,           // DMA channel
+        NTSCScanout.restart_chan,           // DMA channel
         &restart_config,             // channel_config
-        &dma_hw->ch[stream_chan].read_addr,  // write address
+        &dma_hw->ch[NTSCScanout.stream_chan].read_addr,  // write address
         &NTSCScanout.next_scanout_buffer,            // read address
         1,  // size of frame in transfers
         false           // don't start 
     );
 
-    dma_channel_set_irq0_enabled(restart_chan, true);
+    dma_channel_set_irq0_enabled(NTSCScanout.restart_chan, true);
     irq_set_exclusive_handler(DMA_IRQ_0, NTSCRowISR);
     irq_set_enabled(DMA_IRQ_0, true);
 
     pio_sm_set_enabled(NTSCScanout.pio, NTSCScanout.sm, true);
-    dma_channel_start(stream_chan);
+    dma_channel_start(NTSCScanout.stream_chan);
 }
 
 void NTSCDisableScanout()
@@ -548,6 +547,8 @@ void NTSCInit()
     NTSCScanout.pio = pio0;
     NTSCScanout.sm = pio_claim_unused_sm(NTSCScanout.pio, true);
     NTSCScanout.program_offset = pio_add_program(NTSCScanout.pio, &composite_out_program);
+    NTSCScanout.stream_chan = dma_claim_unused_channel(true);
+    NTSCScanout.restart_chan = NTSCScanout.irq_dma_chan = dma_claim_unused_channel(true);
 
     NTSCCalculateParameters();
 }
