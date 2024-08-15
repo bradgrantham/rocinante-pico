@@ -25,28 +25,25 @@ const uint32_t NTSC_PIN_BASE = 8;
 const uint32_t NTSC_PIN_COUNT = 8;
 
 enum {
-    CORE1_QUIESCENT,
+    CORE1_OPERATION_SUCCEEDED = 1,
     CORE1_ENABLE_VIDEO_ISR,
     CORE1_DISABLE_VIDEO_ISR,
 };
-volatile int core1_request;
 
 void core1_main()
 {
     for(;;)
     {
-        switch(core1_request) {
-            case CORE1_QUIESCENT :
-                break;
+        uint32_t request = multicore_fifo_pop_blocking();
+        switch(request) {
             case CORE1_ENABLE_VIDEO_ISR :
                 irq_set_enabled(DMA_IRQ_0, true);
-                core1_request = CORE1_QUIESCENT;
                 break;
             case CORE1_DISABLE_VIDEO_ISR :
                 irq_set_enabled(DMA_IRQ_0, false);
-                core1_request = CORE1_QUIESCENT;
                 break;
         }
+        multicore_fifo_push_blocking(CORE1_OPERATION_SUCCEEDED);
     }
 }
 
@@ -501,10 +498,11 @@ void NTSCEnableScanout()
     irq_set_exclusive_handler(DMA_IRQ_0, NTSCRowISR);
 
     printf("set core 1 to enable\n");
-    core1_request = CORE1_ENABLE_VIDEO_ISR;
-    while(core1_request != CORE1_QUIESCENT)
-    { 
-        sleep_ms(1);
+    multicore_fifo_push_blocking(CORE1_ENABLE_VIDEO_ISR);
+    uint32_t result = multicore_fifo_pop_blocking();
+    if(result != CORE1_OPERATION_SUCCEEDED) {
+        printf("core 1 failed: %lu\n", result);
+        for(;;);
     }
     printf("core 1 quiesced\n");
 
@@ -518,10 +516,11 @@ void NTSCDisableScanout()
     dma_channel_set_irq0_enabled(ntsc.restart_chan, false);
     irq_set_enabled(DMA_IRQ_0, false);
 
-    core1_request = CORE1_DISABLE_VIDEO_ISR;
-    while(core1_request != CORE1_QUIESCENT)
-    { 
-        sleep_ms(1);
+    multicore_fifo_push_blocking(CORE1_DISABLE_VIDEO_ISR);
+    uint32_t result = multicore_fifo_pop_blocking();
+    if(result != CORE1_OPERATION_SUCCEEDED) {
+        printf("core 1 failed: %lu\n", result);
+        for(;;);
     }
 
     dma_channel_cleanup(ntsc.restart_chan);
@@ -860,7 +859,6 @@ int main()
     const uint32_t requested_rate = 270000000; // 250000000; // 133000000;
     set_sys_clock_khz(requested_rate / 1000, 1);
 
-    core1_request = CORE1_QUIESCENT;
     multicore_launch_core1(core1_main);
 
     stdio_init_all(); // ? Why do I need this?  Don't do it in STM32 runtime
