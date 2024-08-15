@@ -20,9 +20,8 @@
 
 #include "coleco_rom_blob.h"
 #include "zaxxon_col_blob.h"
-#include "zaxxon_txt_blob.h"
 #include "smurf_col_blob.h"
-#include "smurf_txt_blob.h"
+#include "model3_rom_blob.h"
 
 struct RomFile {
     const char *name;
@@ -34,6 +33,7 @@ const struct RomFile rom_files[] = {
     { "coleco/Zaxxon (1982) (Sega).col", zaxxon_col_bytes, zaxxon_col_length },
     { "coleco/Smurf - Rescue in Gargamel's Castle (1982).col", smurf_col_bytes, smurf_col_length },
     { "coleco/COLECO.ROM", coleco_rom_bytes, coleco_rom_length },
+    { "model3.rom", model3_rom_bytes, model3_rom_length },
 };
 
 #undef errno

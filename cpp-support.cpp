@@ -138,6 +138,7 @@ void CheckEvents(void)
 
 const std::map<std::string, std::vector<std::string>> filesystem =
 {
+    {"/", { "model3.rom" } },
     {"coleco", { "COLECO.ROM", "Smurf - Rescue in Gargamel's Castle (1982).col", "Zaxxon (1982) (Sega).col" } },
 };
 
