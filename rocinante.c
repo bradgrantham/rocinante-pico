@@ -447,7 +447,7 @@ void NTSCEnableScanout()
     channel_config_set_read_increment(&restart_config, false);
     channel_config_set_write_increment(&restart_config, false);
     channel_config_set_chain_to(&restart_config, ntsc.stream_chan);
-    if(true) channel_config_set_chain_to(&stream_config, ntsc.restart_chan);
+    channel_config_set_chain_to(&stream_config, ntsc.restart_chan);
 
     dma_channel_configure(
         ntsc.stream_chan,           // DMA channel
@@ -479,6 +479,11 @@ void NTSCEnableScanout()
 
 void NTSCDisableScanout()
 {
+    pio_sm_set_enabled(ntsc.pio, ntsc.sm, false);
+    dma_channel_set_irq0_enabled(ntsc.restart_chan, false);
+    irq_set_enabled(DMA_IRQ_0, false);
+    dma_channel_cleanup(ntsc.restart_chan);
+    dma_channel_cleanup(ntsc.stream_chan);
 }
 
 void RoNTSCSetMode(int interlaced, RoRowConfig row_config, RoNTSCModeInitVideoMemoryFunc initFunc, RoNTSCModeFillRowBufferFunc fillBufferFunc, RoNTSCModeNeedsColorburstFunc needsColorBurstFunc)
@@ -493,10 +498,12 @@ void RoNTSCSetMode(int interlaced, RoRowConfig row_config, RoNTSCModeInitVideoMe
     }
 
     NTSCModeFuncsValid = 0;
-    NTSCDisableScanout();
+    if(NTSCRowConfig != RO_VIDEO_ROW_SAMPLES_UNINITIALIZED)
+    {
+        NTSCDisableScanout();
+    }
     // XXX handle row_config != previous row_config by tearing down NTSC scanout, changing clock, and restarting NTSC scanout
-    NTSCRowConfig = row_config;
-    switch(NTSCRowConfig) 
+    switch(row_config) 
     {
         case RO_VIDEO_ROW_SAMPLES_912:
             NTSCRowSamples = 912;
@@ -519,6 +526,7 @@ void RoNTSCSetMode(int interlaced, RoRowConfig row_config, RoNTSCModeInitVideoMe
     initFunc(NTSCVideoMemory, sizeof(NTSCVideoMemory), NTSCBlack, NTSCWhite);
     NTSCRowNumber = 0;
     NTSCFrameNumber = 0;
+    NTSCRowConfig = row_config;
     NTSCEnableScanout();
     NTSCModeFuncsValid = 1;
 }
@@ -538,10 +546,12 @@ void RoNTSCWaitFrame()
 
 void NTSCInit()
 {
+    NTSCCalculateParameters();
     for(int i = NTSC_PIN_BASE; i < NTSC_PIN_BASE + NTSC_PIN_COUNT; i++) {
         gpio_set_slew_rate(i, GPIO_SLEW_RATE_FAST);
         gpio_set_drive_strength(i, GPIO_DRIVE_STRENGTH_8MA);
     }
+
     // Set up PIO program for composite_out
     ntsc.pio = pio0;
     ntsc.sm = pio_claim_unused_sm(ntsc.pio, true);
@@ -549,7 +559,6 @@ void NTSCInit()
     ntsc.stream_chan = dma_claim_unused_channel(true);
     ntsc.restart_chan = ntsc.irq_dma_chan = dma_claim_unused_channel(true);
 
-    NTSCCalculateParameters();
 }
 
 uint32_t RoGetMillis()
