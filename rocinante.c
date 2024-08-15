@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include "pico/multicore.h"
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 #include "pico/binary_info.h"
@@ -22,6 +23,33 @@ const uint LED_PIN = 25;
 
 const uint32_t NTSC_PIN_BASE = 8;
 const uint32_t NTSC_PIN_COUNT = 8;
+
+enum {
+    CORE1_QUIESCENT,
+    CORE1_ENABLE_VIDEO_ISR,
+    CORE1_DISABLE_VIDEO_ISR,
+};
+volatile int core1_request;
+
+void core1_main()
+{
+    for(;;)
+    {
+        switch(core1_request) {
+            case CORE1_QUIESCENT :
+                break;
+            case CORE1_ENABLE_VIDEO_ISR :
+                irq_set_enabled(DMA_IRQ_0, true);
+                core1_request = CORE1_QUIESCENT;
+                break;
+            case CORE1_DISABLE_VIDEO_ISR :
+                irq_set_enabled(DMA_IRQ_0, false);
+                core1_request = CORE1_QUIESCENT;
+                break;
+        }
+    }
+}
+
 
 #define SECTION_CCMRAM
 
@@ -471,7 +499,14 @@ void NTSCEnableScanout()
 
     dma_channel_set_irq0_enabled(ntsc.restart_chan, true);
     irq_set_exclusive_handler(DMA_IRQ_0, NTSCRowISR);
-    irq_set_enabled(DMA_IRQ_0, true);
+
+    printf("set core 1 to enable\n");
+    core1_request = CORE1_ENABLE_VIDEO_ISR;
+    while(core1_request != CORE1_QUIESCENT)
+    { 
+        sleep_ms(1);
+    }
+    printf("core 1 quiesced\n");
 
     pio_sm_set_enabled(ntsc.pio, ntsc.sm, true);
     dma_channel_start(ntsc.stream_chan);
@@ -482,6 +517,13 @@ void NTSCDisableScanout()
     pio_sm_set_enabled(ntsc.pio, ntsc.sm, false);
     dma_channel_set_irq0_enabled(ntsc.restart_chan, false);
     irq_set_enabled(DMA_IRQ_0, false);
+
+    core1_request = CORE1_DISABLE_VIDEO_ISR;
+    while(core1_request != CORE1_QUIESCENT)
+    { 
+        sleep_ms(1);
+    }
+
     dma_channel_cleanup(ntsc.restart_chan);
     dma_channel_cleanup(ntsc.stream_chan);
 }
@@ -817,6 +859,9 @@ int main()
 
     const uint32_t requested_rate = 270000000; // 250000000; // 133000000;
     set_sys_clock_khz(requested_rate / 1000, 1);
+
+    core1_request = CORE1_QUIESCENT;
+    multicore_launch_core1(core1_main);
 
     stdio_init_all(); // ? Why do I need this?  Don't do it in STM32 runtime
     uart_setup();
