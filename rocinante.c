@@ -22,6 +22,8 @@ extern const uint8_t buffer[];
 
 const uint LED_PIN = 25;
 
+const uint AUDIO_PIN = 28;
+
 const uint32_t NTSC_PIN_BASE = 8;
 const uint32_t NTSC_PIN_COUNT = 8;
 
@@ -29,25 +31,139 @@ enum {
     CORE1_OPERATION_SUCCEEDED = 1,
     CORE1_ENABLE_VIDEO_ISR,
     CORE1_DISABLE_VIDEO_ISR,
+    CORE1_AUDIO_TEST,
 };
+
+volatile int core1_line = 0;
 
 void core1_main()
 {
     for(;;)
     {
+        core1_line = __LINE__;
         uint32_t request = multicore_fifo_pop_blocking();
+        core1_line = __LINE__;
         switch(request) {
             case CORE1_ENABLE_VIDEO_ISR :
+                core1_line = __LINE__;
                 irq_set_enabled(DMA_IRQ_0, true);
+                core1_line = __LINE__;
                 break;
             case CORE1_DISABLE_VIDEO_ISR :
+                core1_line = __LINE__;
                 irq_set_enabled(DMA_IRQ_0, false);
+                core1_line = __LINE__;
                 break;
+            case CORE1_AUDIO_TEST : {
+                // approximately 440Hz tone test
+                core1_line = __LINE__;
+                int foo = 0;
+                for(;;) {
+                    core1_line = __LINE__;
+                    pwm_set_gpio_level(AUDIO_PIN, foo ? 0 : 255);
+                    foo = !foo;
+                    sleep_us(2272);
         }
+            }
+        }
+        core1_line = __LINE__;
         multicore_fifo_push_blocking(CORE1_OPERATION_SUCCEEDED);
+        core1_line = __LINE__;
     }
 }
 
+// Audio ----------------------------------------------------------------------
+
+#define AUDIO_CHUNK_SIZE (256 * 2)
+#define AUDIO_CHUNK_COUNT 4
+#define AUDIO_BUFFER_SIZE (AUDIO_CHUNK_SIZE * AUDIO_CHUNK_COUNT)
+
+static uint8_t audioBuffer[AUDIO_BUFFER_SIZE];
+
+volatile size_t audioReadNext = 0;
+volatile size_t audioWriteNext = AUDIO_CHUNK_SIZE * AUDIO_CHUNK_COUNT / 2;
+volatile size_t missedAudioSamples = 0;
+
+void RoAudioGetSamplingInfo(float *rate, size_t *recommendedChunkSize)
+{
+    // If NTSC line ISR is providing audio, we will have a sampling rate of 15.6998 KHz
+    *rate = 15699.76074561403508;
+    *recommendedChunkSize = AUDIO_CHUNK_SIZE;
+}
+
+size_t WriteOverlapsRead(size_t audioWriteNext, size_t writeSize, size_t audioReadNext)
+{
+    size_t testReadPosition = (audioReadNext < audioWriteNext) ? (audioReadNext + AUDIO_BUFFER_SIZE) : audioReadNext;
+    // printf("audioReadNext %zd, testReadPosition %zd\n", audioReadNext, testReadPosition);
+    if((testReadPosition > audioWriteNext) && (audioWriteNext + writeSize >= testReadPosition)) {
+        return audioWriteNext + writeSize - testReadPosition;
+    } else {
+        return 0;
+    }
+}
+
+size_t RoAudioEnqueueSamplesBlocking(size_t writeSize /* in bytes */, uint8_t* buffer)
+{
+#if 0
+    static size_t missedPreviously = 0;
+    if(missedPreviously != missedAudioSamples) {
+        RoDebugOverlayPrintf("Missed %ld\n", missedAudioSamples - missedPreviously);
+        missedPreviously = missedAudioSamples;
+    }
+#endif
+
+    size_t waitSampleCount;
+
+    if(writeSize > AUDIO_BUFFER_SIZE) {
+        return SIZE_MAX;
+    }
+
+    waitSampleCount = WriteOverlapsRead(audioWriteNext, writeSize, audioReadNext);
+
+    while(WriteOverlapsRead(audioWriteNext, writeSize, audioReadNext) != 0) {
+        // printf("Wait... %zd %zd %zd\n", testReadPosition, audioWriteNext, writeSize);
+    }
+
+    size_t toCopy = (writeSize < (AUDIO_BUFFER_SIZE - audioWriteNext)) ? writeSize : (AUDIO_BUFFER_SIZE - audioWriteNext);
+    memcpy(audioBuffer + audioWriteNext, buffer, toCopy);
+
+    size_t remaining = writeSize - toCopy;
+    if(remaining > 0) {
+        memcpy(audioBuffer, buffer + toCopy, remaining);
+    }
+
+    if(audioReadNext == audioWriteNext) {
+        audioReadNext = (audioReadNext + 2) % sizeof(audioBuffer);
+    }
+
+    audioWriteNext = (audioWriteNext + writeSize) % AUDIO_BUFFER_SIZE;
+
+    return waitSampleCount;
+}
+
+void RoAudioClear()
+{
+    memset(audioBuffer, 128, sizeof(audioBuffer));
+    audioReadNext = 0;
+    audioWriteNext = AUDIO_CHUNK_SIZE * AUDIO_CHUNK_COUNT / 2;
+}
+
+void AudioStart()
+{
+    RoAudioClear();
+
+    gpio_set_function(AUDIO_PIN, GPIO_FUNC_PWM);
+    int audio_pin_slice = pwm_gpio_to_slice_num(AUDIO_PIN);
+
+    pwm_config audio_pwm_config = pwm_get_default_config();
+    pwm_config_set_clkdiv(&audio_pwm_config, 8); // 67.17754f); // 270M / (15.7K * 256)
+
+    pwm_config_set_wrap(&audio_pwm_config, 255);
+    pwm_init(audio_pin_slice, &audio_pwm_config, true);
+}
+
+
+// Video ----------------------------------------------------------------------
 
 #define SECTION_CCMRAM
 
@@ -424,6 +540,15 @@ void NTSCFillRowBuffer(NTSCModeTiming *timing, int frameNumber, int lineNumber, 
 void __isr NTSCRowISR()
 {
     dma_hw->ints0 = 1u << ntsc.irq_dma_chan;
+
+    if(audioReadNext != audioWriteNext) {
+        uint16_t value = (audioBuffer[audioReadNext + 0] + audioBuffer[audioReadNext + 1]) / 2;
+        pwm_set_gpio_level(AUDIO_PIN, value);
+        audioReadNext = (audioReadNext + 2) % sizeof(audioBuffer);
+    } else {
+        missedAudioSamples++;
+    }
+
     NTSCRowNumber++;
     if(NTSCRowNumber >= 525) {
         NTSCRowNumber = 0;
@@ -511,8 +636,17 @@ void NTSCEnableScanout()
 void NTSCDisableScanout()
 {
     multicore_fifo_push_blocking(CORE1_DISABLE_VIDEO_ISR);
-    uint32_t result = multicore_fifo_pop_blocking();
-    if(result != CORE1_OPERATION_SUCCEEDED) {
+    // uint32_t result = multicore_fifo_pop_blocking();
+    uint32_t result = 0;
+    bool success = multicore_fifo_pop_timeout_us(100000, &result);
+    if(!success)
+    {
+        printf("multicore fifo pop from core 1 on core 0 timed out\n");
+        printf("core1 stored that it got past line %d\n", core1_line);
+        // for(;;);
+    }
+    else if(result != CORE1_OPERATION_SUCCEEDED)
+    {
         printf("core 1 failed: %lu\n", result);
         for(;;);
     }
@@ -725,23 +859,6 @@ uint8_t RoGetKeypadState(RoControllerIndex which)
     return keypad_value;
 }
 
-size_t RoAudioEnqueueSamplesBlocking(size_t writeSize /* in bytes */, uint8_t* buffer)
-{
-    return 0;
-}
-
-void RoAudioClear()
-{
-}
-
-#define AUDIO_CHUNK_SIZE (256 * 2)
-
-void RoAudioGetSamplingInfo(float *rate, size_t *recommendedChunkSize)
-{
-    *rate = 15699.76074561403508;
-    *recommendedChunkSize = AUDIO_CHUNK_SIZE;
-}
-
 #define BAUD_RATE 115200
 #define DATA_BITS 8
 #define PARITY    UART_PARITY_NONE
@@ -844,6 +961,7 @@ int main()
 {
     bi_decl(bi_program_description("Rocinante on Pico."));
     bi_decl(bi_1pin_with_name(LED_PIN, "On-board LED"));
+    bi_decl(bi_1pin_with_name(AUDIO_PIN, "Mono audio"));
     bi_decl(bi_1pin_with_name(NTSC_PIN_BASE + 0, "Composite bit 0"));
     bi_decl(bi_1pin_with_name(NTSC_PIN_BASE + 1, "Composite bit 1"));
     bi_decl(bi_1pin_with_name(NTSC_PIN_BASE + 2, "Composite bit 2"));
@@ -873,6 +991,29 @@ int main()
     gpio_set_dir(LED_PIN, GPIO_OUT);
 
     printf("Rocinante on Pico, %ld clock rate\n", clock_get_hz(clk_sys));
+
+    AudioStart();
+
+    if(0)
+    {
+        multicore_fifo_push_blocking(CORE1_AUDIO_TEST);
+        uint32_t result = multicore_fifo_pop_blocking();
+        if(result != CORE1_OPERATION_SUCCEEDED) {
+            printf("core 1 failed: %lu\n", result);
+            for(;;);
+        }
+    }
+
+    if(0)
+    {
+        // approximately 440Hz tone test
+        int foo = 0;
+        for(;;) {
+            pwm_set_gpio_level(AUDIO_PIN, foo ? 0 : 255);
+            foo = !foo;
+            sleep_us(2272);
+        }
+    }
 
     printf("initializing composite\n");
     NTSCInit();
