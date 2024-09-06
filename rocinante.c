@@ -578,6 +578,7 @@ void NTSCEnableScanout()
             for(;;);
             break;
     }
+    printf("%s %d\n", __FILE__, __LINE__);
 
     composite_out_program_init(ntsc.pio, ntsc.sm, ntsc.program_offset, NTSC_PIN_BASE, NTSC_PIN_COUNT, freq_needed);
 
@@ -607,6 +608,7 @@ void NTSCEnableScanout()
         NTSCRowSamples / transfer_size,  // size of frame in transfers
         false           // don't start 
     );
+    printf("%s %d\n", __FILE__, __LINE__);
 
     ntsc.next_scanout_buffer = NTSCRowDoubleBuffer[1];
 
@@ -618,8 +620,10 @@ void NTSCEnableScanout()
         1,  // size of frame in transfers
         false           // don't start 
     );
+    printf("%s %d\n", __FILE__, __LINE__);
 
     dma_channel_set_irq0_enabled(ntsc.restart_chan, true);
+    printf("%s %d\n", __FILE__, __LINE__);
     irq_set_exclusive_handler(DMA_IRQ_0, NTSCRowISR);
 
     multicore_fifo_push_blocking(CORE1_ENABLE_VIDEO_ISR);
@@ -672,6 +676,7 @@ void RoNTSCSetMode(int interlaced, RoRowConfig row_config, RoNTSCModeInitVideoMe
     NTSCModeFuncsValid = 0;
     if(NTSCRowConfig != RO_VIDEO_ROW_SAMPLES_UNINITIALIZED)
     {
+        printf("%s %d\n", __FILE__, __LINE__);
         NTSCDisableScanout();
     }
     // XXX handle row_config != previous row_config by tearing down NTSC scanout, changing clock, and restarting NTSC scanout
@@ -695,10 +700,12 @@ void RoNTSCSetMode(int interlaced, RoRowConfig row_config, RoNTSCModeInitVideoMe
     NTSCModeInitVideoMemory = initFunc;
     NTSCModeFillRowBuffer = fillBufferFunc;
     NTSCModeInterlaced = interlaced;
+    printf("%s %d\n", __FILE__, __LINE__);
     initFunc(NTSCVideoMemory, sizeof(NTSCVideoMemory), NTSCBlack, NTSCWhite);
     NTSCRowNumber = 0;
     NTSCFrameNumber = 0;
     NTSCRowConfig = row_config;
+    printf("%s %d\n", __FILE__, __LINE__);
     NTSCEnableScanout();
     NTSCModeFuncsValid = 1;
 }
