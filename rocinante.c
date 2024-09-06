@@ -394,8 +394,10 @@ volatile int NTSCFrameNumber = 0;
 volatile int markHandlerInSamples = 0;
 int NTSCModeFuncsValid = 0;
 int NTSCModeInterlaced = 1;
+void* NTSCModePrivateData;
+RoNTSCModeFiniFunc NTSCModeFinalize = NULL;
 RoNTSCModeFillRowBufferFunc NTSCModeFillRowBuffer = DefaultFillRowBuffer;
-RoNTSCModeInitVideoMemoryFunc NTSCModeInitVideoMemory = NULL;
+RoNTSCModeInitFunc NTSCModeInit = NULL;
 RoNTSCModeNeedsColorburstFunc NTSCModeNeedsColorburst = DefaultNeedsColorburst;
 int NTSCRowConfig = RO_VIDEO_ROW_SAMPLES_UNINITIALIZED;
 NTSCModeTiming *NTSCCurrentTiming;
@@ -662,10 +664,11 @@ void NTSCDisableScanout()
     dma_channel_cleanup(ntsc.stream_chan);
 }
 
-void RoNTSCSetMode(int interlaced, RoRowConfig row_config, RoNTSCModeInitVideoMemoryFunc initFunc, RoNTSCModeFillRowBufferFunc fillBufferFunc, RoNTSCModeNeedsColorburstFunc needsColorBurstFunc)
+void RoNTSCSetMode(int interlaced, RoRowConfig row_config, void* private_data, RoNTSCModeInitFunc initFunc, RoNTSCModeFiniFunc finiFunc, RoNTSCModeFillRowBufferFunc fillBufferFunc, RoNTSCModeNeedsColorburstFunc needsColorBurstFunc)
 {
     if((NTSCModeInterlaced == interlaced) &&
-        (initFunc == NTSCModeInitVideoMemory) &&
+        (initFunc == NTSCModeInit) &&
+        (finiFunc == NTSCModeFinalize) &&
         (fillBufferFunc == NTSCModeFillRowBuffer) &&
         (needsColorBurstFunc == NTSCModeNeedsColorburst) &&
         (row_config == NTSCRowConfig))
@@ -674,6 +677,12 @@ void RoNTSCSetMode(int interlaced, RoRowConfig row_config, RoNTSCModeInitVideoMe
     }
 
     NTSCModeFuncsValid = 0;
+
+    if(NTSCModeFinalize != NULL)
+    {
+        NTSCModeFinalize(NTSCModePrivateData);
+    }
+
     if(NTSCRowConfig != RO_VIDEO_ROW_SAMPLES_UNINITIALIZED)
     {
         printf("%s %d\n", __FILE__, __LINE__);
@@ -695,13 +704,16 @@ void RoNTSCSetMode(int interlaced, RoRowConfig row_config, RoNTSCModeInitVideoMe
             NTSCCurrentTiming = &NTSCTiming1368;
             break;
     }
+
     NTSCGenerateLineBuffers(NTSCCurrentTiming);
     NTSCModeNeedsColorburst = needsColorBurstFunc;
-    NTSCModeInitVideoMemory = initFunc;
+    NTSCModeInit = initFunc;
     NTSCModeFillRowBuffer = fillBufferFunc;
+    NTSCModeFinalize = finiFunc;
+    NTSCModePrivateData = private_data;
     NTSCModeInterlaced = interlaced;
     printf("%s %d\n", __FILE__, __LINE__);
-    initFunc(NTSCVideoMemory, sizeof(NTSCVideoMemory), NTSCBlack, NTSCWhite);
+    initFunc(private_data, NTSCBlack, NTSCWhite);
     NTSCRowNumber = 0;
     NTSCFrameNumber = 0;
     NTSCRowConfig = row_config;
