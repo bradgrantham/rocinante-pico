@@ -2,11 +2,55 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <memory>
 #include <cstring>
 #include "byte_queue.h"
 #include "events.h"
 #include "events_internal.h"
 #include "rocinante.h"
+
+struct fooboodle {
+    int glarg;
+    fooboodle(int i) : glarg(i) { printf("fooboodle ctor\n"); }
+    ~fooboodle() { printf("fooboodle dtor\n"); }
+};
+
+
+extern "C" {
+
+void DoATest()
+{
+    float *p = new float[10];
+    printf("my array of floats is at %p\n", p);
+    delete[] p;
+
+    try {
+        p = new(std::nothrow) float[1024 * 1024];
+        printf("my array of floats is at %p (should be 0)\n", p);
+        delete[] p;
+
+    } catch (std::bad_alloc& ba) {
+
+        printf("bad_alloc\n");
+        // std::cerr << "bad_alloc caught: " << ba.what() << '\n';
+    }
+
+    try {
+        p = new float[1024 * 1024];
+        printf("my array of floats is at %p (should be 0)\n", p);
+        delete[] p;
+
+    } catch (std::bad_alloc& ba) {
+
+        printf("got expected bad_alloc for 1M floats\n");
+    }
+
+    {
+        std::unique_ptr<fooboodle> p = std::make_unique<fooboodle>(10);
+    }
+}
+
+};
 
 #if 0
 void LauncherRegisterApp(const std::string& name, const std::string& exe_name, const std::string& what_to_choose, const std::string& where_to_choose, const std::string& suffix, const std::vector<std::string>& first_args, const std::vector<std::string>& last_args, int (*main)(int argc, const char **argv))
@@ -140,6 +184,7 @@ const std::map<std::string, std::vector<std::string>> filesystem =
 {
     {"/", { "model3.rom" } },
     {"coleco", { "COLECO.ROM", "Smurf - Rescue in Gargamel's Castle (1982).col", "Zaxxon (1982) (Sega).col" } },
+    {"floppies", { "loderunner.dsk" } }, 
 };
 
 Status RoFillFilenameList(const char* dirName, uint32_t flags, const char* optionalFilterSuffix, size_t maxNames, char **filenames, size_t* filenamesSize)

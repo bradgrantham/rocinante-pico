@@ -15,6 +15,7 @@
 #include <reent.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <pico/stdio.h>
 
 // #include "ff.h"
 
@@ -22,6 +23,9 @@
 #include "zaxxon_col_blob.h"
 #include "smurf_col_blob.h"
 #include "model3_rom_blob.h"
+#include "apple2e_rom_blob.h"
+#include "diskII_bin_blob.h"
+#include "loderunner_dsk_blob.h"
 
 struct RomFile {
     const char *name;
@@ -34,6 +38,9 @@ const struct RomFile rom_files[] = {
     { "coleco/Smurf - Rescue in Gargamel's Castle (1982).col", smurf_col_bytes, smurf_col_length },
     { "coleco/COLECO.ROM", coleco_rom_bytes, coleco_rom_length },
     { "model3.rom", model3_rom_bytes, model3_rom_length },
+    { "apple2e.rom", apple2e_rom_bytes, apple2e_rom_length },
+    { "diskII.c600.c6ff.bin", diskII_bin_bytes, diskII_bin_length },
+    { "floppies/loderunner.dsk", loderunner_dsk_bytes, loderunner_dsk_length },
 };
 
 #undef errno
@@ -75,7 +82,6 @@ static int romSeek[MAX_FILES];
 
 #endif /* USE_FATFS */
 
-int putchar_raw(int);
 int getchar_timeout_us(uint32_t timeout_us);
 
 int _write(int file, char *ptr, int len)
@@ -87,7 +93,7 @@ int _write(int file, char *ptr, int len)
 
 		for (DataIdx = 0; DataIdx < len; DataIdx++)
 		{
-		   putchar_raw(*ptr++); // __io_putchar( *ptr++ );
+		   stdio_putchar_raw(*ptr++); // __io_putchar( *ptr++ );
 		}
 	return len;
     } else {

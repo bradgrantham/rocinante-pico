@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.13)
 
+set(PICO_CXX_ENABLE_EXCEPTIONS 1)
+
 include(pico_sdk_import.cmake)
 
 project(rocinante C CXX ASM)
@@ -8,6 +10,7 @@ set(CMAKE_CXX_STANDARD 17)
 pico_sdk_init()
 
 add_compile_definitions(ROSA=1)
+add_compile_definitions(PICO_MALLOC_PANIC=0)
 
 add_executable(rocinante rocinante.c cpp-support.cpp events.cpp hid.cpp rosa/api/key-repeat.cpp rosa/api/text-mode.cpp rosa/api/8x16.cpp rosa/api/ui.cpp rosa/apps/coleco/tms9918.cpp rosa/apps/coleco/emulator.cpp rosa/apps/coleco/coleco_platform_rosa.cpp rosa/apps/coleco/z80emu-cv.c syscalls.c rosa/apps/launcher/launcher.cpp rosa/apps/trs80/fonts.cpp rosa/apps/trs80/trs80.cpp rosa/apps/trs80/z80emu.c)
 
@@ -20,4 +23,4 @@ pico_generate_pio_header(rocinante ${CMAKE_CURRENT_LIST_DIR}/rocinante.pio)
 
 pico_add_extra_outputs(rocinante)
 
-target_link_libraries(rocinante pico_stdlib pico_divider pico_multicore pico_bootsel_via_double_reset hardware_pio hardware_dma hardware_adc hardware_irq hardware_clocks hardware_pll)
+target_link_libraries(rocinante pico_stdlib pico_divider pico_multicore pico_bootsel_via_double_reset hardware_pio hardware_dma hardware_adc hardware_irq hardware_clocks hardware_pll hardware_pwm)

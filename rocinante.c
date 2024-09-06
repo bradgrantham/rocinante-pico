@@ -4,13 +4,14 @@
 #include <math.h>
 #include "pico/multicore.h"
 #include "pico/stdlib.h"
-#include "hardware/gpio.h"
 #include "pico/binary_info.h"
+#include "pico/time.h"
+#include "hardware/gpio.h"
 #include "hardware/pio.h"
 #include "hardware/dma.h"
 #include "hardware/clocks.h"
 #include "hardware/irq.h"
-#include "pico/time.h"
+#include "hardware/pwm.h"
 #include "rocinante.pio.h"
 
 #include "byte_queue.h"
@@ -247,7 +248,6 @@ void NTSCGenerateLineBuffers(NTSCModeTiming *timing)
     // pixels is (1 - .165) * (1 / 15734) / (1 / 3579545) = 189.96568418711380557696 cycles (190)
     //     280 cycles at double clock
 
-    printf("generate line buffers, clocks = %d\n", timing->line_clocks);
     NTSCFillEqPulseLine(timing, NTSCEqSyncPulseLine);
     NTSCFillVSyncLine(timing, NTSCVSyncLine);
     NTSCFillBlankLine(timing, NTSCBlankLineBW, 0);
@@ -497,14 +497,12 @@ void NTSCEnableScanout()
     dma_channel_set_irq0_enabled(ntsc.restart_chan, true);
     irq_set_exclusive_handler(DMA_IRQ_0, NTSCRowISR);
 
-    printf("set core 1 to enable\n");
     multicore_fifo_push_blocking(CORE1_ENABLE_VIDEO_ISR);
     uint32_t result = multicore_fifo_pop_blocking();
     if(result != CORE1_OPERATION_SUCCEEDED) {
-        printf("core 1 failed: %lu\n", result);
+        printf("core 1 failed ENABLE_VIDEO_ISR: %lu\n", result);
         for(;;);
     }
-    printf("core 1 quiesced\n");
 
     pio_sm_set_enabled(ntsc.pio, ntsc.sm, true);
     dma_channel_start(ntsc.stream_chan);
@@ -512,16 +510,15 @@ void NTSCEnableScanout()
 
 void NTSCDisableScanout()
 {
-    pio_sm_set_enabled(ntsc.pio, ntsc.sm, false);
-    dma_channel_set_irq0_enabled(ntsc.restart_chan, false);
-    irq_set_enabled(DMA_IRQ_0, false);
-
     multicore_fifo_push_blocking(CORE1_DISABLE_VIDEO_ISR);
     uint32_t result = multicore_fifo_pop_blocking();
     if(result != CORE1_OPERATION_SUCCEEDED) {
         printf("core 1 failed: %lu\n", result);
         for(;;);
     }
+
+    pio_sm_set_enabled(ntsc.pio, ntsc.sm, false);
+    dma_channel_set_irq0_enabled(ntsc.restart_chan, false);
 
     dma_channel_cleanup(ntsc.restart_chan);
     dma_channel_cleanup(ntsc.stream_chan);
@@ -606,6 +603,11 @@ uint32_t RoGetMillis()
 {
     absolute_time_t now = get_absolute_time();
     return to_ms_since_boot (now);
+}
+
+void RoDelayMillis(uint32_t millis)
+{
+    sleep_ms(millis);
 }
 
 int RoDoHousekeeping(void)
@@ -742,8 +744,8 @@ void RoAudioGetSamplingInfo(float *rate, size_t *recommendedChunkSize)
 
 #define BAUD_RATE 115200
 #define DATA_BITS 8
-#define STOP_BITS 1
 #define PARITY    UART_PARITY_NONE
+#define STOP_BITS 1
 
 #define UART0_TX  0
 #define UART0_RX  1
@@ -836,6 +838,8 @@ void TestControllers()
 int launcher_main(int argc, const char **argv);
 int coleco_main(int argc, const char **argv);
 
+extern void DoATest();
+
 int main()
 {
     bi_decl(bi_program_description("Rocinante on Pico."));
@@ -874,6 +878,8 @@ int main()
     NTSCInit();
 
     printf("launching...\n");
+
+    DoATest();
 
     if(0)
     {
