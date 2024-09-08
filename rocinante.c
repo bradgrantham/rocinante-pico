@@ -165,21 +165,21 @@ void AudioStart()
 
 // Video ----------------------------------------------------------------------
 
-#define SECTION_CCMRAM
+#define PLACEMENT_FAST_RAM
 
-// BEGIN copied from STM32F Rocinante Core/Src/main
+// BEGIN NTSC kit
 
 // These should be in tightly coupled memory to reduce contention with RAM during DMA 
 #define ROW_SAMPLE_STORAGE_MAX 1368
-uint8_t NTSCEqSyncPulseLine[ROW_SAMPLE_STORAGE_MAX];
-uint8_t NTSCVSyncLine[ROW_SAMPLE_STORAGE_MAX];
-uint8_t NTSCBlankLineBW[ROW_SAMPLE_STORAGE_MAX];
-uint8_t NTSCBlankLineColor[ROW_SAMPLE_STORAGE_MAX];
+uint8_t PLACEMENT_FAST_RAM NTSCEqSyncPulseLine[ROW_SAMPLE_STORAGE_MAX];
+uint8_t PLACEMENT_FAST_RAM NTSCVSyncLine[ROW_SAMPLE_STORAGE_MAX];
+uint8_t PLACEMENT_FAST_RAM NTSCBlankLineBW[ROW_SAMPLE_STORAGE_MAX];
+uint8_t PLACEMENT_FAST_RAM NTSCBlankLineColor[ROW_SAMPLE_STORAGE_MAX];
 
-uint8_t NTSCSyncTip;
-uint8_t NTSCSyncPorch;
-uint8_t NTSCBlack;
-uint8_t NTSCWhite;
+uint8_t PLACEMENT_FAST_RAM NTSCSyncTip;
+uint8_t PLACEMENT_FAST_RAM NTSCSyncPorch;
+uint8_t PLACEMENT_FAST_RAM NTSCBlack;
+uint8_t PLACEMENT_FAST_RAM NTSCWhite;
 
 uint8_t NTSCColorburst0;
 uint8_t NTSCColorburst60;
@@ -231,19 +231,20 @@ void NTSCCalculateParameters()
     // Scale amplitude of wave added to DC by .6 to match seen from other
     // sources on oscilloscope
 
+    const float colorburst_amplitude = .7;
     // These are at intervals of 90 degrees - these values replicate
     // the colorburst at 14.31818MHz
     NTSCColorburst0 = NTSCSyncPorch;
-    NTSCColorburst90 = NTSCSyncPorch - .6 * NTSCSyncPorch;
+    NTSCColorburst90 = NTSCSyncPorch - colorburst_amplitude * NTSCSyncPorch;
     NTSCColorburst180 = NTSCSyncPorch;
-    NTSCColorburst270 = NTSCSyncPorch + .6 * NTSCSyncPorch;
+    NTSCColorburst270 = NTSCSyncPorch + colorburst_amplitude * NTSCSyncPorch;
 
     // These, plus the 0 and 180 degree values above, are intervals of 60 degrees
     // these values replicate the colorburst at 21.477270
-    NTSCColorburst60 = NTSCSyncPorch - .866 * .6 * NTSCSyncPorch;
-    NTSCColorburst120 = NTSCSyncPorch - .866 * .6 * NTSCSyncPorch;
-    NTSCColorburst240 = NTSCSyncPorch + .866 * .6 * NTSCSyncPorch;
-    NTSCColorburst300 = NTSCSyncPorch + .866 * .6 * NTSCSyncPorch;
+    NTSCColorburst60 = NTSCSyncPorch - .866 * colorburst_amplitude * NTSCSyncPorch;
+    NTSCColorburst120 = NTSCSyncPorch - .866 * colorburst_amplitude * NTSCSyncPorch;
+    NTSCColorburst240 = NTSCSyncPorch + .866 * colorburst_amplitude * NTSCSyncPorch;
+    NTSCColorburst300 = NTSCSyncPorch + .866 * colorburst_amplitude * NTSCSyncPorch;
 }
 
 void NTSCFillEqPulseLine(NTSCModeTiming *timing, unsigned char *rowBuffer)
@@ -276,7 +277,7 @@ void NTSCAddColorburst(NTSCModeTiming* timing, unsigned char *rowBuffer, int row
     {
         for(int col = startOfColorburstClocks; col < startOfColorburstClocks + NTSC_COLORBURST_CYCLES * 4; col++)
         {
-            switch((col - startOfColorburstClocks) % 4) {
+            switch(col % 4) {
                 case 0: rowBuffer[col] = NTSCColorburst0; break;
                 case 1: rowBuffer[col] = NTSCColorburst90; break;
                 case 2: rowBuffer[col] = NTSCColorburst180; break;
@@ -288,7 +289,7 @@ void NTSCAddColorburst(NTSCModeTiming* timing, unsigned char *rowBuffer, int row
     {
         for(int col = startOfColorburstClocks; col < startOfColorburstClocks + NTSC_COLORBURST_CYCLES * 6; col++)
         {
-            switch((col - startOfColorburstClocks) % 6) {
+            switch(col % 6) {
                 case 0: rowBuffer[col] = NTSCColorburst0; break;
                 case 1: rowBuffer[col] = NTSCColorburst60; break;
                 case 2: rowBuffer[col] = NTSCColorburst120; break;
@@ -388,10 +389,8 @@ void DefaultFillRowBuffer(int frameIndex, int rowNumber, size_t maxSamples, uint
 
 enum { RO_VIDEO_ROW_SAMPLES_UNINITIALIZED = 0, };
 
-uint8_t NTSCRowDoubleBuffer[2][ROW_SAMPLE_STORAGE_MAX];
 volatile int NTSCRowNumber = 0;
 volatile int NTSCFrameNumber = 0;
-volatile int markHandlerInSamples = 0;
 int NTSCModeFuncsValid = 0;
 int NTSCModeInterlaced = 1;
 void* NTSCModePrivateData;
@@ -404,26 +403,16 @@ NTSCModeTiming *NTSCCurrentTiming;
 size_t NTSCRowSamples = 0;
 size_t NTSCAppRowSamples = 0;
 size_t NTSCAppRowOffset = 0;
-uint8_t NTSCVideoMemory[65536];
-
-typedef struct NTSCScanoutVars
-{
-    int irq_dma_chan;
-    void *next_scanout_buffer;
-    PIO pio;
-    uint sm;
-    uint program_offset;
-    int stream_chan;
-    int restart_chan;
-} NTSCScanoutVars;
-
-NTSCScanoutVars ntsc;
 
 // NTSC interlaced is made up of "odd" and "even" fields.  For NTSC, the first field is
 // odd, which means it's #1.
 
+#include "frame.c"
+
 void NTSCFillRowBuffer(NTSCModeTiming *timing, int frameNumber, int lineNumber, unsigned char *rowBuffer)
 {
+    // /* XXX */ memcpy(rowBuffer, buffer + lineNumber * 912, 912);  return;
+    // /* XXX */ memset(rowBuffer, 0, 100);  memset(rowBuffer + 100, 255, 912 - 100);  return;
     // XXX could optimize these by having one branch be lines < 21
 
     /*
@@ -463,6 +452,12 @@ void NTSCFillRowBuffer(NTSCModeTiming *timing, int frameNumber, int lineNumber, 
         }
 
     } else if(lineNumber >= 263 && lineNumber <= 271) {
+
+        // According to VCR this is wrong:
+        // REMINDER : SCOPE NUMBERING IS 1-BASED (these following line numbers are corrected to 0-based)
+        // 262 first half is from last line of field 0 video
+        // Otherwise the next 9 lines (in half-lines) are the same as field 0 lines 0-8
+        // And line 283 is half-blank, with content in the second half
 
         // Handle interlace half line and vertical retrace and sync.
         if(lineNumber <= 264) {
@@ -539,6 +534,97 @@ void NTSCFillRowBuffer(NTSCModeTiming *timing, int frameNumber, int lineNumber, 
     }
 }
 
+// Defined by platform
+void NTSCEnableScanout();
+void NTSCDisableScanout();
+
+void RoNTSCSetMode(int interlaced, RoRowConfig row_config, void* private_data, RoNTSCModeInitFunc initFunc, RoNTSCModeFiniFunc finiFunc, RoNTSCModeFillRowBufferFunc fillBufferFunc, RoNTSCModeNeedsColorburstFunc needsColorBurstFunc)
+{
+    if((NTSCModeInterlaced == interlaced) &&
+        (initFunc == NTSCModeInit) &&
+        (finiFunc == NTSCModeFinalize) &&
+        (fillBufferFunc == NTSCModeFillRowBuffer) &&
+        (needsColorBurstFunc == NTSCModeNeedsColorburst) &&
+        (row_config == NTSCRowConfig))
+    {
+        return;
+    }
+
+    NTSCModeFuncsValid = 0;
+
+    if(NTSCModeFinalize != NULL)
+    {
+        NTSCModeFinalize(NTSCModePrivateData);
+    }
+
+    if(NTSCRowConfig != RO_VIDEO_ROW_SAMPLES_UNINITIALIZED)
+    {
+        printf("%s %d\n", __FILE__, __LINE__);
+        NTSCDisableScanout();
+    }
+
+    switch(row_config) 
+    {
+        case RO_VIDEO_ROW_SAMPLES_912:
+            NTSCRowSamples = 912;
+            NTSCAppRowSamples = 704;
+            NTSCAppRowOffset = 164; // ?? Why is this a magic number different from (912 - 704) / 2?  HSYNC?  Porch?  Etc?
+            NTSCCurrentTiming = &NTSCTiming912;
+            break;
+        case RO_VIDEO_ROW_SAMPLES_1368:
+            NTSCRowSamples = 1368;
+            NTSCAppRowSamples = 1056;
+            NTSCAppRowOffset = 246; // ?? Why is this a magic number different from (1368 - 1056) / 2?  HSYNC?  Porch?  Etc?
+            NTSCCurrentTiming = &NTSCTiming1368;
+            break;
+    }
+
+    NTSCGenerateLineBuffers(NTSCCurrentTiming);
+    NTSCModeNeedsColorburst = needsColorBurstFunc;
+    NTSCModeInit = initFunc;
+    NTSCModeFillRowBuffer = fillBufferFunc;
+    NTSCModeFinalize = finiFunc;
+    NTSCModePrivateData = private_data;
+    NTSCModeInterlaced = interlaced;
+    printf("%s %d\n", __FILE__, __LINE__);
+    initFunc(private_data, NTSCBlack, NTSCWhite);
+    NTSCRowNumber = 0;
+    NTSCFrameNumber = 0;
+    NTSCRowConfig = row_config;
+    printf("%s %d\n", __FILE__, __LINE__);
+    NTSCEnableScanout();
+    NTSCModeFuncsValid = 1;
+}
+
+void RoNTSCWaitFrame()
+{
+    // NTSC won't actually go lineNumber >= 525...
+    int field0_vblank;
+    int field1_vblank;
+    do {
+        field0_vblank = (NTSCRowNumber > 257) && (NTSCRowNumber < 262);
+        field1_vblank = (NTSCRowNumber > 520) && (NTSCRowNumber < NTSC_FRAME_LINES);
+    } while(!field0_vblank && !field1_vblank); // Wait for VBLANK; should do something smarter
+}
+
+// END of NTSC kit
+
+volatile bool markHandlerInSamples = 0;
+
+typedef struct NTSCScanoutVars
+{
+    int irq_dma_chan;
+    void *next_scanout_buffer;
+    PIO pio;
+    uint sm;
+    uint program_offset;
+    int stream_chan;
+    int restart_chan;
+} NTSCScanoutVars;
+
+NTSCScanoutVars ntsc;
+uint8_t NTSCRowDoubleBuffer[2][ROW_SAMPLE_STORAGE_MAX];
+
 void __isr NTSCRowISR()
 {
     dma_hw->ints0 = 1u << ntsc.irq_dma_chan;
@@ -551,15 +637,37 @@ void __isr NTSCRowISR()
         missedAudioSamples++;
     }
 
-    NTSCRowNumber++;
-    if(NTSCRowNumber >= 525) {
-        NTSCRowNumber = 0;
-        NTSCFrameNumber++;
+    NTSCRowNumber = NTSCRowNumber + 1;
+    if(NTSCModeInterlaced)
+    {
+        if(NTSCRowNumber == 525)
+        {
+            NTSCRowNumber = 0;
+        }
     }
+    else
+    {
+        if(NTSCRowNumber == 262)
+        {
+            NTSCRowNumber = 0;
+        }
+    }
+    if(NTSCRowNumber == 0) {
+        NTSCFrameNumber ++;
+    }
+
     ntsc.next_scanout_buffer = NTSCRowDoubleBuffer[(NTSCRowNumber + 1) % 2];
     if(NTSCModeFuncsValid) 
     {
         NTSCFillRowBuffer(NTSCCurrentTiming, NTSCFrameNumber, NTSCRowNumber, ntsc.next_scanout_buffer);
+        if(markHandlerInSamples)
+        {
+            if( (NTSCRowNumber > 30 && NTSCRowNumber < 262) ||
+                (NTSCRowNumber > 262+30 && NTSCRowNumber < 262+262))
+            {
+                memset(NTSCRowDoubleBuffer[NTSCRowNumber % 2] + NTSCAppRowOffset, (NTSCBlack + NTSCWhite) / 2, NTSCAppRowSamples);
+            }
+        }
     }
 }
 
@@ -664,80 +772,10 @@ void NTSCDisableScanout()
     dma_channel_cleanup(ntsc.stream_chan);
 }
 
-void RoNTSCSetMode(int interlaced, RoRowConfig row_config, void* private_data, RoNTSCModeInitFunc initFunc, RoNTSCModeFiniFunc finiFunc, RoNTSCModeFillRowBufferFunc fillBufferFunc, RoNTSCModeNeedsColorburstFunc needsColorBurstFunc)
-{
-    if((NTSCModeInterlaced == interlaced) &&
-        (initFunc == NTSCModeInit) &&
-        (finiFunc == NTSCModeFinalize) &&
-        (fillBufferFunc == NTSCModeFillRowBuffer) &&
-        (needsColorBurstFunc == NTSCModeNeedsColorburst) &&
-        (row_config == NTSCRowConfig))
-    {
-        return;
-    }
-
-    NTSCModeFuncsValid = 0;
-
-    if(NTSCModeFinalize != NULL)
-    {
-        NTSCModeFinalize(NTSCModePrivateData);
-    }
-
-    if(NTSCRowConfig != RO_VIDEO_ROW_SAMPLES_UNINITIALIZED)
-    {
-        printf("%s %d\n", __FILE__, __LINE__);
-        NTSCDisableScanout();
-    }
-    // XXX handle row_config != previous row_config by tearing down NTSC scanout, changing clock, and restarting NTSC scanout
-    switch(row_config) 
-    {
-        case RO_VIDEO_ROW_SAMPLES_912:
-            NTSCRowSamples = 912;
-            NTSCAppRowSamples = 704;
-            NTSCAppRowOffset = 164; // ?? Why is this a magic number different from (912 - 704) / 2?  HSYNC?  Porch?  Etc?
-            NTSCCurrentTiming = &NTSCTiming912;
-            break;
-        case RO_VIDEO_ROW_SAMPLES_1368:
-            NTSCRowSamples = 1368;
-            NTSCAppRowSamples = 1056;
-            NTSCAppRowOffset = 246; // ?? Why is this a magic number different from (1368 - 1056) / 2?  HSYNC?  Porch?  Etc?
-            NTSCCurrentTiming = &NTSCTiming1368;
-            break;
-    }
-
-    NTSCGenerateLineBuffers(NTSCCurrentTiming);
-    NTSCModeNeedsColorburst = needsColorBurstFunc;
-    NTSCModeInit = initFunc;
-    NTSCModeFillRowBuffer = fillBufferFunc;
-    NTSCModeFinalize = finiFunc;
-    NTSCModePrivateData = private_data;
-    NTSCModeInterlaced = interlaced;
-    printf("%s %d\n", __FILE__, __LINE__);
-    initFunc(private_data, NTSCBlack, NTSCWhite);
-    NTSCRowNumber = 0;
-    NTSCFrameNumber = 0;
-    NTSCRowConfig = row_config;
-    printf("%s %d\n", __FILE__, __LINE__);
-    NTSCEnableScanout();
-    NTSCModeFuncsValid = 1;
-}
-
-void RoNTSCWaitFrame()
-{
-    // NTSC won't actually go lineNumber >= 525...
-    int field0_vblank;
-    int field1_vblank;
-    do {
-        field0_vblank = (NTSCRowNumber > 257) && (NTSCRowNumber < 262);
-        field1_vblank = (NTSCRowNumber > 520) && (NTSCRowNumber < NTSC_FRAME_LINES);
-    } while(!field0_vblank && !field1_vblank); // Wait for VBLANK; should do something smarter
-}
-
-// END copied from STM32F Rocinante Core/Src/main
-
 void NTSCInit()
 {
     NTSCCalculateParameters();
+
     for(int i = NTSC_PIN_BASE; i < NTSC_PIN_BASE + NTSC_PIN_COUNT; i++) {
         gpio_set_slew_rate(i, GPIO_SLEW_RATE_FAST);
         gpio_set_drive_strength(i, GPIO_DRIVE_STRENGTH_8MA);
