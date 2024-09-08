@@ -231,7 +231,7 @@ void NTSCCalculateParameters()
     // Scale amplitude of wave added to DC by .6 to match seen from other
     // sources on oscilloscope
 
-    const float colorburst_amplitude = .7;
+    const float colorburst_amplitude = .6;
     // These are at intervals of 90 degrees - these values replicate
     // the colorburst at 14.31818MHz
     NTSCColorburst0 = NTSCSyncPorch;
@@ -692,6 +692,11 @@ void NTSCEnableScanout()
 
     composite_out_program_init(ntsc.pio, ntsc.sm, ntsc.program_offset, NTSC_PIN_BASE, NTSC_PIN_COUNT, freq_needed);
 
+    for(int i = NTSC_PIN_BASE; i < NTSC_PIN_BASE + NTSC_PIN_COUNT; i++) {
+        gpio_set_slew_rate(i, GPIO_SLEW_RATE_FAST);
+        gpio_set_drive_strength(i, GPIO_DRIVE_STRENGTH_8MA);
+    }
+
     // Set up DMA channel from image buffer to FIFO, paced by FIFO empty
     const uint transfer_enum = DMA_SIZE_8;
     const int transfer_size = 1;
@@ -775,11 +780,6 @@ void NTSCDisableScanout()
 void NTSCInit()
 {
     NTSCCalculateParameters();
-
-    for(int i = NTSC_PIN_BASE; i < NTSC_PIN_BASE + NTSC_PIN_COUNT; i++) {
-        gpio_set_slew_rate(i, GPIO_SLEW_RATE_FAST);
-        gpio_set_drive_strength(i, GPIO_DRIVE_STRENGTH_8MA);
-    }
 
     // Set up PIO program for composite_out
     ntsc.pio = pio0;
