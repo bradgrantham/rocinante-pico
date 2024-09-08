@@ -185,6 +185,7 @@ const std::map<std::string, std::vector<std::string>> filesystem =
     {"/", { "model3.rom" } },
     {"coleco", { "COLECO.ROM", "Smurf - Rescue in Gargamel's Castle (1982).col", "Zaxxon (1982) (Sega).col" } },
     {"floppies", { "loderunner.dsk" } }, 
+    {"images", { "oops.ppm" } }, 
 };
 
 Status RoFillFilenameList(const char* dirName, uint32_t flags, const char* optionalFilterSuffix, size_t maxNames, char **filenames, size_t* filenamesSize)

@@ -26,6 +26,7 @@
 #include "apple2e_rom_blob.h"
 #include "diskII_bin_blob.h"
 #include "loderunner_dsk_blob.h"
+#include "oops_ppm_blob.h"
 
 struct RomFile {
     const char *name;
@@ -41,6 +42,7 @@ const struct RomFile rom_files[] = {
     { "apple2e.rom", apple2e_rom_bytes, apple2e_rom_length },
     { "diskII.c600.c6ff.bin", diskII_bin_bytes, diskII_bin_length },
     { "floppies/loderunner.dsk", loderunner_dsk_bytes, loderunner_dsk_length },
+    { "images/oops.ppm", oops_ppm_bytes, oops_ppm_length },
 };
 
 #undef errno
@@ -212,7 +214,7 @@ int _read(int file, char *ptr, int len)
         int blob_length = rom_files[which].length;
 
         wasRead = (romSeek[myFile] + len > blob_length) ? (blob_length - romSeek[myFile]) : len;
-        printf("read %d bytes from %d at %d\n", wasRead, openedRom[myFile], romSeek[myFile]);
+        // printf("read %d bytes from %d at %d\n", wasRead, openedRom[myFile], romSeek[myFile]);
         memcpy(ptr, blob + romSeek[myFile], wasRead);
         romSeek[myFile] += wasRead;
 #endif /* USE_FATFS */
@@ -282,7 +284,7 @@ int _open(char *path, int flags, ...)
     {
         openedRom[which] = found;
         romSeek[which] = 0;
-        printf("opened %s as %d, file %d\n", path, found, which + FD_OFFSET);
+        // printf("opened %s as %d, file %d\n", path, found, which + FD_OFFSET);
         filesOpened[which] = 1;
         return which + FD_OFFSET;
     }
