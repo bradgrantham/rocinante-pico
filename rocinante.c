@@ -15,7 +15,7 @@ extern const uint8_t buffer[];
 
 const uint LED_PIN = 25;
 
-const uint32_t NTSC_PIN_BASE = 2;
+const uint32_t NTSC_PIN_BASE = 8;
 const uint32_t NTSC_PIN_COUNT = 8;
 
 volatile int frame_number = 0;
