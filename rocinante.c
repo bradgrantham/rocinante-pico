@@ -11,7 +11,7 @@
 #include "pico/time.h"
 #include "rocinante.pio.h"
 
-extern const uint8_t buffer[];
+#include "frame.c"
 
 const uint LED_PIN = 25;
 
@@ -23,19 +23,24 @@ volatile int row_number = 0;
 int irq_dma_chan;
 const void* buffer_start;
 
-uint8_t rowsamples[2][912];
+uint8_t rowsamples[2][1368];
+size_t samples;
+size_t lines;
 void *next_scanout_buffer;
 
 void __isr dma_handler()
 {
     dma_hw->ints0 = 1u << irq_dma_chan;
     row_number++;
-    if(row_number >= 525) {
+    if(row_number >= lines) {
         row_number = 0;
         frame_number++;
     }
     next_scanout_buffer = rowsamples[(row_number + 1) % 2];
-    memcpy(next_scanout_buffer, buffer + row_number * 912, 912);
+    if(1) memcpy(next_scanout_buffer, buffer + row_number * samples, samples);
+    if(0) for(int i = 0; i < samples; i++) {
+        ((uint8_t*)next_scanout_buffer)[i] = i * 256 / samples;
+    }
 }
 
 int main()
@@ -51,8 +56,44 @@ int main()
     bi_decl(bi_1pin_with_name(NTSC_PIN_BASE + 6, "Composite bit 6"));
     bi_decl(bi_1pin_with_name(NTSC_PIN_BASE + 7, "Composite bit 7"));
 
-    const uint32_t requested_rate = 270000000; // 250000000; // 133000000;
-    set_sys_clock_khz(requested_rate / 1000, 1);
+    const uint32_t requested_rate = 272000000; // 270000000;
+    set_sys_clock_hz(requested_rate, 1);
+
+    int interleave;
+
+    switch(sizeof(buffer))
+    {
+        case 910 * 262:
+            samples = 910;
+            lines = 262;
+            interleave = 0;
+            break;
+        case 912 * 262:
+            samples = 912;
+            lines = 262;
+            interleave = 0;
+            break;
+        case 1368 * 262:
+            samples = 1368;
+            lines = 262;
+            interleave = 0;
+            break;
+        case 910 * 525:
+            samples = 910;
+            lines = 525;
+            interleave = 1;
+            break;
+        case 912 * 525:
+            samples = 912;
+            lines = 525;
+            interleave = 1;
+            break;
+        case 1368 * 525:
+            samples = 1368;
+            lines = 525;
+            interleave = 1;
+            break;
+    }
 
     stdio_init_all();
 
@@ -61,33 +102,8 @@ int main()
 
     printf("Rocinante on Pico, %ld clock rate\n", clock_get_hz(clk_sys));
 
-    uint8_t *scaled = malloc(228 * 525);
-    if(scaled == NULL) {
-        printf("Couldn't allocate\n");
-        while(1);
-    }
-    for(int row = 0; row < 525; row++)
-    {
-        for(int col = 0; col < 228; col++)
-        {
-            const uint8_t *bufferp = buffer + 4 * col + row * 912;
-            uint8_t *scaledp = scaled + col + row * 228;
-            uint8_t v = (bufferp[0] + bufferp[1] + bufferp[2] + buffer[3]) / 4;
-            *scaledp = v;
-            if((col % 3 == 0) && (row % 20 == 0))
-            {
-                uint8_t c = (v > 127) ? 127 : v;
-                putchar(" .-+*#"[c * 6 / 128]);
-            }
-        }
-        if(row % 20 == 0)
-        {
-            puts("");
-        }
-    }
-
-    size_t size = 912;
-    uint32_t freq_needed = 14318180 ; // 14493570 ; // 14794309; // correction for weird timing I see, was // 14318180;
+    size_t size = samples;
+    uint32_t freq_needed = (samples == 1368) ? 21477270 : 14318180;
 
     // Set processor clock to 128.863620 and then clock out a value
     // every 9 cycles?  O_o  Probably no better than setting PIO to 14.31818 * 2
