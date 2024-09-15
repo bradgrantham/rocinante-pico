@@ -31,7 +31,7 @@ int main()
     bi_decl(bi_1pin_with_name(NTSC_PIN_BASE + 6, "Composite bit 6"));
     bi_decl(bi_1pin_with_name(NTSC_PIN_BASE + 7, "Composite bit 7"));
 
-    const uint32_t requested_rate = 232000000; // 272000000; // 270000000;
+    const uint32_t requested_rate = 267000000; // 232000000; // 272000000; // 270000000;
     set_sys_clock_hz(requested_rate, 0);
 
     int samples, lines;
