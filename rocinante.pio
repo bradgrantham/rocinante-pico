@@ -9,16 +9,22 @@ composite_out_start:
 
 
 % c-sdk {
+#include <math.h>
 static inline void composite_out_program_init(PIO pio, uint sm, uint offset, uint pin_base, uint pin_count, float freq) {
 
     pio_sm_config c = composite_out_program_get_default_config(offset);
 
     sm_config_set_out_pins(&c, pin_base, pin_count);
 
-    // float clkdiv = clock_get_hz(clk_sys) / (2 * freq);
+    float divisor = clock_get_hz(clk_sys) / (2 * freq);
+    uint32_t divisor_16i8 = (uint32_t)round(divisor * 256.0);
+    uint16_t whole = divisor_16i8 / 256;
+    uint8_t frac = divisor_16i8 % 256;
+    printf("clock = %lu\ndivisor = %f\nwhole = 0x%X, frac = 0x%02X\n", clock_get_hz(clk_sys), divisor, whole, frac);
     // printf("clkdiv = %d.%03d\n", (int)clkdiv, (int)(1000 * (clkdiv - (int)clkdiv)));
     // sm_config_set_clkdiv(&c, clkdiv);
-    sm_config_set_clkdiv_int_frac(&c, 0x8, 0x1A); // 232MHz
+    // sm_config_set_clkdiv_int_frac(&c, 0x8, 0x1A); // 232MHz
+    sm_config_set_clkdiv_int_frac(&c, whole, frac);
 
     for(int i = pin_base; i < pin_base + pin_count; i++)
     {

@@ -32,7 +32,7 @@ int main()
     bi_decl(bi_1pin_with_name(NTSC_PIN_BASE + 7, "Composite bit 7"));
 
     const uint32_t requested_rate = 232000000; // 272000000; // 270000000;
-    set_sys_clock_hz(requested_rate, 1);
+    set_sys_clock_hz(requested_rate, 0);
 
     int samples, lines;
 
@@ -62,6 +62,10 @@ int main()
             samples = 1368;
             lines = 525;
             break;
+        default:
+            printf("unexpected image size %zd\n", sizeof(buffer));
+            panic("data error");
+            break;
     }
 
     stdio_init_all();
@@ -72,7 +76,8 @@ int main()
     printf("Rocinante on Pico, %ld clock rate\n", clock_get_hz(clk_sys));
 
     size_t size = samples * lines;
-    uint32_t freq_needed = requested_rate / (samples == 1368) ? 21477270 : 14318180;
+    uint32_t freq_needed = (samples == 1368) ? 21477270 : 14318180;
+    printf("frame is %zd bytes at %ld Hz\n", size, freq_needed);
 
     // Set processor clock to 128.863620 and then clock out a value
     // every 9 cycles?  O_o  Probably no better than setting PIO to 14.31818 * 2
@@ -109,7 +114,7 @@ int main()
     channel_config_set_read_increment(&restart_config, false);
     channel_config_set_write_increment(&restart_config, false);
     channel_config_set_chain_to(&restart_config, stream_chan);
-    if(true) channel_config_set_chain_to(&stream_config, restart_chan);
+    channel_config_set_chain_to(&stream_config, restart_chan);
 
     dma_channel_configure(
         stream_chan,           // DMA channel
