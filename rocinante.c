@@ -18,31 +18,6 @@ const uint LED_PIN = 25;
 const uint32_t NTSC_PIN_BASE = 8;
 const uint32_t NTSC_PIN_COUNT = 8;
 
-volatile int frame_number = 0;
-volatile int row_number = 0;
-int irq_dma_chan;
-const void* buffer_start;
-
-uint8_t rowsamples[2][1368];
-size_t samples;
-size_t lines;
-void *next_scanout_buffer;
-
-void __isr dma_handler()
-{
-    dma_hw->ints0 = 1u << irq_dma_chan;
-    row_number++;
-    if(row_number >= lines) {
-        row_number = 0;
-        frame_number++;
-    }
-    next_scanout_buffer = rowsamples[(row_number + 1) % 2];
-    if(1) memcpy(next_scanout_buffer, buffer + row_number * samples, samples);
-    if(0) for(int i = 0; i < samples; i++) {
-        ((uint8_t*)next_scanout_buffer)[i] = i * 256 / samples;
-    }
-}
-
 int main()
 {
     bi_decl(bi_program_description("Rocinante on Pico."));
@@ -56,42 +31,36 @@ int main()
     bi_decl(bi_1pin_with_name(NTSC_PIN_BASE + 6, "Composite bit 6"));
     bi_decl(bi_1pin_with_name(NTSC_PIN_BASE + 7, "Composite bit 7"));
 
-    const uint32_t requested_rate = 272000000; // 270000000;
+    const uint32_t requested_rate = 232000000; // 272000000; // 270000000;
     set_sys_clock_hz(requested_rate, 1);
 
-    int interleave;
+    int samples, lines;
 
     switch(sizeof(buffer))
     {
         case 910 * 262:
             samples = 910;
             lines = 262;
-            interleave = 0;
             break;
         case 912 * 262:
             samples = 912;
             lines = 262;
-            interleave = 0;
             break;
         case 1368 * 262:
             samples = 1368;
             lines = 262;
-            interleave = 0;
             break;
         case 910 * 525:
             samples = 910;
             lines = 525;
-            interleave = 1;
             break;
         case 912 * 525:
             samples = 912;
             lines = 525;
-            interleave = 1;
             break;
         case 1368 * 525:
             samples = 1368;
             lines = 525;
-            interleave = 1;
             break;
     }
 
@@ -102,8 +71,8 @@ int main()
 
     printf("Rocinante on Pico, %ld clock rate\n", clock_get_hz(clk_sys));
 
-    size_t size = samples;
-    uint32_t freq_needed = (samples == 1368) ? 21477270 : 14318180;
+    size_t size = samples * lines;
+    uint32_t freq_needed = requested_rate / (samples == 1368) ? 21477270 : 14318180;
 
     // Set processor clock to 128.863620 and then clock out a value
     // every 9 cycles?  O_o  Probably no better than setting PIO to 14.31818 * 2
@@ -125,7 +94,7 @@ int main()
     int transfer_size = 1;
 
     int stream_chan = dma_claim_unused_channel(true);
-    int restart_chan = irq_dma_chan = dma_claim_unused_channel(true);
+    int restart_chan = dma_claim_unused_channel(true);
 
     dma_channel_config stream_config = dma_channel_get_default_config(stream_chan);
     channel_config_set_transfer_data_size(&stream_config, transfer_enum);
@@ -146,51 +115,25 @@ int main()
         stream_chan,           // DMA channel
         &stream_config,             // channel_config
         &pio->txf[sm],  // write address
-        rowsamples[0],            // read address
+        buffer,            // read address
         size / transfer_size,  // size of frame in transfers
-        false           // don't start 
+        false           // start 
     );
 
-    next_scanout_buffer = rowsamples[1];
+    const void *buffer_address = buffer;
 
     dma_channel_configure(
         restart_chan,           // DMA channel
         &restart_config,             // channel_config
         &dma_hw->ch[stream_chan].read_addr,  // write address
-        &next_scanout_buffer,            // read address
+        &buffer_address,            // read address
         1,  // size of frame in transfers
         false           // don't start 
     );
-
-
-    dma_channel_set_irq0_enabled(restart_chan, true);
-    irq_set_exclusive_handler(DMA_IRQ_0, dma_handler);
-    irq_set_enabled(DMA_IRQ_0, true);
 
     pio_sm_set_enabled(pio, sm, true);
     dma_channel_start(stream_chan);
 
     printf("streaming...\n");
-
-// need an IRQ
-    int previous_frame = 0;
-    absolute_time_t started = get_absolute_time();
-    uint64_t started_us = to_us_since_boot (started);
-    while(1)
-    {
-        sleep_ms(1);
-        if(previous_frame + 30 < frame_number)
-        {
-            absolute_time_t ended = get_absolute_time();
-            uint64_t ended_us = to_us_since_boot (ended);
-            uint64_t us_per_frame = (ended_us - started_us) / 30;
-            uint64_t ms = us_per_frame / 1000;
-            uint64_t frac = us_per_frame - ms * 1000;
-            printf("(%llu us) %llu.%03llu ms per frame, expected 33.44\n", us_per_frame, ms, frac);
-            started = ended;
-            started_us = ended_us;
-            previous_frame = frame_number;
-        }
-        gpio_put(LED_PIN, (frame_number % 30) < 15);
-    }
+    sleep_ms(1000 * 1000);
 }

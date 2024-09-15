@@ -15,9 +15,10 @@ static inline void composite_out_program_init(PIO pio, uint sm, uint offset, uin
 
     sm_config_set_out_pins(&c, pin_base, pin_count);
 
-    float clkdiv = clock_get_hz(clk_sys) / (2 * freq);
-    printf("clkdiv = %d.%03d\n", (int)clkdiv, (int)(1000 * (clkdiv - (int)clkdiv)));
-    sm_config_set_clkdiv(&c, clkdiv);
+    // float clkdiv = clock_get_hz(clk_sys) / (2 * freq);
+    // printf("clkdiv = %d.%03d\n", (int)clkdiv, (int)(1000 * (clkdiv - (int)clkdiv)));
+    // sm_config_set_clkdiv(&c, clkdiv);
+    sm_config_set_clkdiv_int_frac(&c, 0x8, 0x1A); // 232MHz
 
     for(int i = pin_base; i < pin_base + pin_count; i++)
     {
