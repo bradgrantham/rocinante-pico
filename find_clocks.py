@@ -6,7 +6,7 @@ results = []
 for i in range(100):
     clk = base_clk + 1_000_000*i
 
-    desired = burst * 8
+    desired = burst * 12
     div = desired
 
     good = (clk*256 + div//2)//div
