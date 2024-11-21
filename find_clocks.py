@@ -6,6 +6,7 @@ results = []
 for i in range(100):
     clk = base_clk + 1_000_000*i
 
+    # sampling rate (e.g. 4 or 6) times 2 because PIO operates x2
     desired = burst * 12
     div = desired
 
