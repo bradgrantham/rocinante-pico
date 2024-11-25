@@ -653,18 +653,19 @@ int main()
     bi_decl(bi_1pin_with_name(JOYSTICK_FIRE_PIN, "Controller FIRE pin"));
 
     const uint32_t requested_rate = 262000000; // 250000000; // 133000000;
-    set_sys_clock_hz(requested_rate / 1000, 1);
+    set_sys_clock_hz(requested_rate, 1);
 
-    multicore_launch_core1(core1_main);
-
-    stdio_init_all(); // ? Why do I need this?  Don't do it in STM32 runtime
+    stdio_init_all();
     uart_setup();
-    InitializeControllerPins();
+
+    printf("Rocinante on Pico, %ld clock rate\n", clock_get_hz(clk_sys));
 
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
 
-    printf("Rocinante on Pico, %ld clock rate\n", clock_get_hz(clk_sys));
+    multicore_launch_core1(core1_main);
+
+    InitializeControllerPins();
 
     AudioStart();
 
