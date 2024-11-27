@@ -298,7 +298,6 @@ void PlatformEnableNTSCScanout(NTSCLineConfig line_config, bool interlaced)
             panic("unexpected line config");
             break;
     }
-    printf("%s %d\n", __FILE__, __LINE__);
 
     bool succeeded = set_sys_clock_khz(system_freq_needed / 1000, 0);
     if(!succeeded)
@@ -349,7 +348,6 @@ void PlatformEnableNTSCScanout(NTSCLineConfig line_config, bool interlaced)
         ntsc.lineSamples / transfer_size,  // size of frame in transfers
         false           // don't start 
     );
-    printf("%s %d\n", __FILE__, __LINE__);
 
     ntsc.next_scanout_buffer = videoLineBuffers[1];
 
@@ -361,10 +359,8 @@ void PlatformEnableNTSCScanout(NTSCLineConfig line_config, bool interlaced)
         1,  // size of frame in transfers
         false           // don't start 
     );
-    printf("%s %d\n", __FILE__, __LINE__);
 
     dma_channel_set_irq0_enabled(ntsc.restart_chan, true);
-    printf("%s %d\n", __FILE__, __LINE__);
     irq_set_exclusive_handler(DMA_IRQ_0, NTSCLineISR);
 
     multicore_fifo_push_blocking(CORE1_ENABLE_VIDEO_ISR);
