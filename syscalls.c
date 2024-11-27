@@ -153,13 +153,16 @@ int _lseek(int file, int ptr, int dir)
     if((file == 0) || (file == 1) || (file == 2)) {
 	return 0;
     } else {
-#ifdef USE_FATFS
+
         int myFile = file - FD_OFFSET;
         if(!filesOpened[myFile]) {
             printf("XXX lseek: file not opened %d\n", myFile);
             errno = EBADF;
             return -1;
         }
+
+#ifdef USE_FATFS
+
         FRESULT result;
         if(dir == SEEK_SET) {
             result = f_lseek(&files[myFile], ptr);
@@ -174,10 +177,34 @@ int _lseek(int file, int ptr, int dir)
             return -1;
         }
         return f_tell(&files[myFile]);
+
 #else /* not USE_FATFS */
-        errno = EIO;
-        return -1;
+
+        int which = openedRom[myFile];
+        int blob_length = rom_files[which].length;
+        int new_seek;
+        if(dir == SEEK_SET)
+        {
+            new_seek = ptr;
+        }
+        else if(dir == SEEK_CUR)
+        {
+            new_seek = romSeek[myFile] + ptr;
+        }
+        else /* SEEK_END */
+        {
+            new_seek = blob_length + ptr;
+        }
+        if((new_seek < 0) || (new_seek >= blob_length))
+        {
+            errno = EINVAL;
+            return -1;
+        }
+        romSeek[myFile] = new_seek;
+        return romSeek[myFile];
+
 #endif /* USE_FATFS */
+
     }
 }
 
