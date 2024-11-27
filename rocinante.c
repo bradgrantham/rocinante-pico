@@ -45,7 +45,8 @@ void core1_main()
         core1_line = __LINE__;
         uint32_t request = multicore_fifo_pop_blocking();
         core1_line = __LINE__;
-        switch(request) {
+        switch(request)
+        {
             case CORE1_ENABLE_VIDEO_ISR :
                 core1_line = __LINE__;
                 irq_set_enabled(DMA_IRQ_0, true);
@@ -56,16 +57,23 @@ void core1_main()
                 irq_set_enabled(DMA_IRQ_0, false);
                 core1_line = __LINE__;
                 break;
-            case CORE1_AUDIO_TEST : {
+            case CORE1_AUDIO_TEST :
+            {
                 // approximately 440Hz tone test
                 core1_line = __LINE__;
                 int foo = 0;
-                for(;;) {
+                for(;;)
+                {
                     core1_line = __LINE__;
                     pwm_set_gpio_level(AUDIO_PIN, foo ? 0 : 255);
                     foo = !foo;
                     sleep_us(2272);
-        }
+                }
+            }
+            default:
+            {
+                core1_line = 666666;
+                for(;;);
             }
         }
         core1_line = __LINE__;
@@ -631,6 +639,66 @@ int coleco_main(int argc, const char **argv);
 
 extern void DoATest();
 
+// https://stackoverflow.com/a/34571089/211234
+// Modified to C 11/25/2024
+static const char *BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+void base64Encode(const uint8_t* in, size_t size)
+{
+    int val = 0;
+    int valb = -6;
+    int outsize = 0;
+
+    for (size_t s = 0; s < size; s++)
+    {
+        uint8_t c = in[s];
+        val = (val << 8) + c;
+        valb += 8;
+        while (valb >= 0) {
+            putchar(BASE64_ALPHABET[(val >> valb) & 0x3F]);
+            outsize ++;
+            valb -= 6;
+        }
+    }
+    if (valb > -6)
+    {
+        putchar(BASE64_ALPHABET[((val << 8) >> (valb + 8)) & 0x3F]);
+        outsize ++;
+    }
+    while (outsize % 4 != 0)
+    {
+        putchar('=');
+        outsize ++;
+    }
+}
+
+void display_test_image()
+{
+    const int width = 448;
+    const int height = 240;
+    const int comp = 1;
+    uint8_t img[20 + width * height * comp];
+    uint8_t *p = img + sprintf(img, "%s %d %d 255\n", (comp == 1) ? "P5" : "P6", width, height);
+    for(int y = 0; y < height; y++)
+    {
+        for(int x = 0; x < width; x++)
+        {
+            if(comp == 1) 
+            {
+                p[x + y * width] = 128;
+            }
+            else
+            {
+                p[(x + y * width) * comp + 0] = 255;
+                p[(x + y * width) * comp + 1] = 0;
+                p[(x + y * width) * comp + 2] = 0;
+            }
+        }
+    }
+    printf("\033]1337;File=width=%dpx;height=%dpx;inline=1:", width, height);
+    base64Encode(img, (p - img) + width * height * comp);
+    printf("\007\n");
+}
+
 int main()
 {
     bi_decl(bi_program_description("Rocinante on Pico."));
@@ -658,6 +726,7 @@ int main()
     stdio_init_all();
     uart_setup();
 
+    sleep_us(1500000);
     printf("Rocinante on Pico, %ld clock rate\n", clock_get_hz(clk_sys));
 
     gpio_init(LED_PIN);
@@ -693,9 +762,11 @@ int main()
     printf("initializing composite\n");
     InitializeVideo();
 
-    printf("launching...\n");
+    // display_test_image();
 
     DoATest();
+
+    printf("launching...\n");
 
     if(0)
     {
