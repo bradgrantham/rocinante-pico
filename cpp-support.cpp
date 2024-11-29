@@ -131,7 +131,8 @@ int enqueue_serial_input(uint8_t c)
             case '*' : enqueue_press_release(KEYCAP_LEFTSHIFT, KEYCAP_8_ASTERISK); return 1; break;
             case '(' : enqueue_press_release(KEYCAP_LEFTSHIFT, KEYCAP_9_OPAREN); return 1; break;
             case ')' : enqueue_press_release(KEYCAP_LEFTSHIFT, KEYCAP_0_CPAREN); return 1; break;
-            case '\n' : enqueue_press_release(KEYCAP_ENTER); return 1; break;
+            case 13 : enqueue_press_release(KEYCAP_ENTER); return 1; break;
+            // case '\n' : enqueue_press_release(KEYCAP_LEFTCONTROL, KEYCAP_J); return 1; break;
             case '' : enqueue_press_release(KEYCAP_ESCAPE); return 1; break;
             case '' : enqueue_press_release(KEYCAP_BACKSPACE); return 1; break;
             case '\t': enqueue_press_release(KEYCAP_TAB); return 1; break;
