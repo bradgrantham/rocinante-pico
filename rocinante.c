@@ -20,6 +20,8 @@
 #include "ntsc-kit-platform.h"
 #include "text-mode.h"
 
+extern void enqueue_serial_input(uint8_t c);
+
 extern const uint8_t buffer[];
 
 const uint LED_PIN = 25;
@@ -424,6 +426,12 @@ void RoDelayMillis(uint32_t millis)
 
 int RoDoHousekeeping(void)
 {
+    int c;
+    // while((c = getchar_timeout_us(0)) != -1) {
+    if((c = getchar_timeout_us(0)) != PICO_ERROR_TIMEOUT) {
+        printf("%d\n", c);
+        enqueue_serial_input(c);
+    }
     return 0;
 }
 
@@ -550,7 +558,6 @@ uint8_t RoGetKeypadState(RoControllerIndex which)
     // maybe need a SystemDrainEvents that gets things in the queue that is called first thing by RoGetEvent
 
 struct queue uart_input_queue;
-extern void enqueue_serial_input(uint8_t c);
 
 void uart0_irq_routine(void)
 {
@@ -757,6 +764,12 @@ int main()
 
     printf("initializing composite\n");
     InitializeVideo();
+
+    while(0)
+    {
+        char c = getchar_timeout_us(1000000); // __io_getchar();
+        printf("%d\n", c);
+    }
 
     // display_test_image();
 
