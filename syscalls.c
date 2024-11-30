@@ -17,39 +17,12 @@
 #include <sys/wait.h>
 #include <pico/stdio.h>
 
-// #include "ff.h"
-
-#include "coleco_rom_blob.h"
-#include "zaxxon_col_blob.h"
-#include "smurf_col_blob.h"
-#include "model3_rom_blob.h"
-#include "apple2e_rom_blob.h"
-#include "diskII_bin_blob.h"
-#include "loderunner_dsk_blob.h"
-#include "oops_ppm_blob.h"
-
-struct RomFile {
-    const char *name;
-    const void *blob;
-    size_t length;
-};
-
-const struct RomFile rom_files[] = {
-    { "coleco/Zaxxon (1982) (Sega).col", zaxxon_col_bytes, zaxxon_col_length },
-    { "coleco/Smurf - Rescue in Gargamel's Castle (1982).col", smurf_col_bytes, smurf_col_length },
-    { "coleco/COLECO.ROM", coleco_rom_bytes, coleco_rom_length },
-    { "model3.rom", model3_rom_bytes, model3_rom_length },
-    { "apple2e.rom", apple2e_rom_bytes, apple2e_rom_length },
-    { "diskII.c600.c6ff.bin", diskII_bin_bytes, diskII_bin_length },
-    { "floppies/loderunner.dsk", loderunner_dsk_bytes, loderunner_dsk_length },
-    { "images/oops.ppm", oops_ppm_bytes, oops_ppm_length },
-};
+#include "ff.h"
 
 #undef errno
 extern int errno;
 
-// #define USE_FATFS
-
+#define USE_FATFS
 
 int _getpid(void)
 {
@@ -68,19 +41,12 @@ void _exit (int status)
 	while (1) {}
 }
 
+#ifdef USE_FATFS
 
 #define MAX_FILES 4
 enum { FD_OFFSET = 3 };
-static int filesOpened[MAX_FILES];
-
-#ifdef USE_FATFS
-
 static FIL files[MAX_FILES];    /* starting with fd=3, so fd 3 through 3 + MAX_FILES - 1 */
-
-#else 
-
-static int openedRom[MAX_FILES];
-static int romSeek[MAX_FILES];
+static int filesOpened[MAX_FILES];
 
 #endif /* USE_FATFS */
 
@@ -179,32 +145,9 @@ int _lseek(int file, int ptr, int dir)
         return f_tell(&files[myFile]);
 
 #else /* not USE_FATFS */
-
-        int which = openedRom[myFile];
-        int blob_length = rom_files[which].length;
-        int new_seek;
-        if(dir == SEEK_SET)
-        {
-            new_seek = ptr;
-        }
-        else if(dir == SEEK_CUR)
-        {
-            new_seek = romSeek[myFile] + ptr;
-        }
-        else /* SEEK_END */
-        {
-            new_seek = blob_length + ptr;
-        }
-        if((new_seek < 0) || (new_seek >= blob_length))
-        {
-            errno = EINVAL;
+        errno = EIO;
             return -1;
-        }
-        romSeek[myFile] = new_seek;
-        return romSeek[myFile];
-
 #endif /* USE_FATFS */
-
     }
 }
 
@@ -235,19 +178,11 @@ int _read(int file, char *ptr, int len)
             errno = EIO;
             return -1;
         }
-#else /* not USE_FATFS */
-        int which = openedRom[myFile];
-        const uint8_t *blob = rom_files[which].blob;
-        int blob_length = rom_files[which].length;
-
-        wasRead = (romSeek[myFile] + len > blob_length) ? (blob_length - romSeek[myFile]) : len;
-        // printf("read %d bytes from %d at %d\n", wasRead, openedRom[myFile], romSeek[myFile]);
-        memcpy(ptr, blob + romSeek[myFile], wasRead);
-        romSeek[myFile] += wasRead;
-#endif /* USE_FATFS */
         return wasRead;
-        // errno = EIO;
-        // return -1;
+#else /* not USE_FATFS */
+        errno = EIO;
+        return -1;
+#endif /* USE_FATFS */
     }
 }
 
@@ -298,23 +233,6 @@ int _open(char *path, int flags, ...)
 
     return which + FD_OFFSET;
 #else /* not USE_FATFS */
-    int found = -1;
-    for(int i = 0; i < sizeof(rom_files) / sizeof(rom_files[0]); i++)
-    {
-        if(strcmp(rom_files[i].name, path) == 0)
-        {
-            found = i;
-            break;
-        }
-    }
-    if(found != -1)
-    {
-        openedRom[which] = found;
-        romSeek[which] = 0;
-        // printf("opened %s as %d, file %d\n", path, found, which + FD_OFFSET);
-        filesOpened[which] = 1;
-        return which + FD_OFFSET;
-    }
     errno = EIO;
     return -1;
 #endif /* USE_FATFS */

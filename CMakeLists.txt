@@ -12,7 +12,7 @@ pico_sdk_init()
 add_compile_definitions(ROSA=1)
 add_compile_definitions(PICO_MALLOC_PANIC=0)
 
-add_executable(rocinante rocinante.c rosa/api/ntsc-kit.c rosa/api/rocinante.cpp cpp-support.cpp events.cpp hid.cpp rosa/api/key-repeat.cpp rosa/api/text-mode.cpp rosa/api/8x16.cpp rosa/api/ui.cpp rosa/apps/coleco/tms9918.cpp rosa/apps/coleco/emulator.cpp rosa/apps/coleco/coleco_platform_rosa.cpp rosa/apps/coleco/z80emu-cv.c syscalls.c rosa/apps/launcher/launcher.cpp rosa/apps/trs80/fonts.cpp rosa/apps/trs80/trs80.cpp rosa/apps/trs80/z80emu.c rosa/apps/showimage/showimage.cpp rosa/apps/apple2e/apple2e.cpp rosa/apps/apple2e/interface_rosa.cpp rosa/apps/apple2e/dis6502.cpp crc7.c sd_spi.c)
+add_executable(rocinante rocinante.c rosa/api/ntsc-kit.c rosa/api/rocinante.cpp cpp-support.cpp events.cpp hid.cpp rosa/api/key-repeat.cpp rosa/api/text-mode.cpp rosa/api/8x16.cpp rosa/api/ui.cpp rosa/apps/coleco/tms9918.cpp rosa/apps/coleco/emulator.cpp rosa/apps/coleco/coleco_platform_rosa.cpp rosa/apps/coleco/z80emu-cv.c syscalls.c rosa/apps/launcher/launcher.cpp rosa/apps/trs80/fonts.cpp rosa/apps/trs80/trs80.cpp rosa/apps/trs80/z80emu.c rosa/apps/showimage/showimage.cpp rosa/apps/apple2e/apple2e.cpp rosa/apps/apple2e/interface_rosa.cpp rosa/apps/apple2e/dis6502.cpp crc7.c sd_spi.c ff.c ff_unicode.c diskio.c)
 
 target_include_directories(rocinante PRIVATE rosa/api)
 

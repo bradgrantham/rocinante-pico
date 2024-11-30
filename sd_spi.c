@@ -155,7 +155,7 @@ int SDCARD_init(spi_inst_t *spi)
 
     // After init, we should be able to set the clock as
     // high as 25MHz.
-    spi_set_baudrate(spi, 25000000);
+    spi_set_baudrate(spi, 1000000);
 
     return 1;
 }

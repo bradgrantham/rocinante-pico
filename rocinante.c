@@ -23,6 +23,7 @@
 #include "ntsc-kit-platform.h"
 #include "text-mode.h"
 
+#include "ff.h"
 
 extern void enqueue_serial_input(uint8_t c);
 
@@ -549,6 +550,63 @@ uint8_t RoGetKeypadState(RoControllerIndex which)
     return keypad_value;
 }
 
+Status RoFillFilenameList(const char* dirName, uint32_t flags, const char* optionalFilterSuffix, size_t maxNames, char **filenames, size_t* filenamesSize)
+{
+    Status status;
+
+    FRESULT res;
+    DIR dir;
+    static FILINFO fno;
+
+    res = f_opendir(&dir, dirName);                       /* Open the directory */
+    if (res == FR_OK) {
+
+        for (;;) {
+            res = f_readdir(&dir, &fno);                   /* Read a directory item */
+            if(res != FR_OK) {
+                printf("failed to readdir - %d\n", res);
+                break;
+            }
+            if (fno.fname[0] == 0) break;  /* Break on end of dir */
+
+            // if (fno.fattrib & AM_DIR) {                    /* It is a directory */
+                // printf("%s/\n", fno.fname);
+            // }
+
+            int addToList = 1;
+
+            if (fno.fattrib & AM_DIR) {                    /* It is a directory */
+                // XXX Really should have a way to descend into directories.
+                addToList = 0;
+            } else if((fno.fname[0] == '.') && (flags & CHOOSE_FILE_IGNORE_DOTFILES)) {
+                addToList = 0;
+            } else if(optionalFilterSuffix && (strcmp(optionalFilterSuffix, fno.fname + strlen(fno.fname) - strlen(optionalFilterSuffix)) != 0)) {
+                addToList = 0;
+            }
+
+            if(addToList) {
+                if(*filenamesSize > maxNames - 1) {
+                    return RO_RESOURCE_EXHAUSTED;
+                }
+                filenames[(*filenamesSize)++] = strdup(fno.fname);
+            }
+        }
+        f_closedir(&dir);
+        status = RO_SUCCESS;
+
+    } else {
+
+        if(*filenamesSize > maxNames - 1) {
+            return RO_RESOURCE_EXHAUSTED;
+        }
+        filenames[(*filenamesSize)++] = strdup("failed to f_opendir");
+        status = RO_RESOURCE_NOT_FOUND;
+
+    }
+
+    return status;
+}
+
 #define BAUD_RATE 115200
 #define DATA_BITS 8
 #define PARITY    UART_PARITY_NONE
@@ -706,6 +764,8 @@ void display_test_image()
     printf("\007\n");
 }
 
+extern void set_ff_spi_inst(spi_inst_t *spi);
+
 int main()
 {
     bi_decl(bi_program_description("Rocinante on Pico."));
@@ -745,6 +805,7 @@ int main()
     uint baudrate = spi_init(spi, 200000);
     printf("spi0 baud rate = %u\n", baudrate);
     spi_set_format(spi, 8, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
+    set_ff_spi_inst(spi);
 
     int success = SDCARD_init(spi);
     if(!success)
@@ -754,7 +815,7 @@ int main()
     }
     printf("opened SD!\n");
 
-    if(true)
+    if(false)
     {
         static uint8_t block[SD_BLOCK_SIZE];
         SDCARD_readblock(spi, 0, block);
@@ -763,6 +824,18 @@ int main()
             printf("%02X ", block[i]);
         }
         printf("\n");
+    }
+
+    if(true)
+    {
+        static FATFS gFATVolume;
+        FRESULT result = f_mount(&gFATVolume, "0:", 1);
+        if(result != FR_OK) {
+            printf("ERROR: FATFS mount result is %d\n", result);
+            for(;;);
+        } else {
+            printf("Mounted FATFS from SD card successfully.\n");
+        }
     }
 
     gpio_init(LED_PIN);
