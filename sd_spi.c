@@ -101,11 +101,11 @@ int SDCARD_send_command(spi_inst_t *spi, enum SDCardCommand command, unsigned lo
 // postcondition: SD card CS is low (enabled)
 int SDCARD_init(spi_inst_t *spi)
 {
-    unsigned char response[8];
+    static unsigned char response[8];
     unsigned long OCR;
 
     /* CS false, 80 clk pulses (read 10 bytes) */
-    unsigned char buffer[10];
+    static unsigned char buffer[10];
     for(unsigned int u = 0; u < sizeof(buffer); u++)
         buffer[u] = 0xff;
     spi_write_blocking(spi, buffer, sizeof(buffer));
@@ -236,7 +236,7 @@ int SDCARD_readblock(spi_inst_t *spi, unsigned int blocknum, unsigned char *bloc
 int SDCARD_writeblock(spi_inst_t *spi, unsigned int blocknum, const unsigned char *block)
 {
     int count;
-    unsigned char response[8];
+    static unsigned char response[8];
 
     // Send write block command.
     if(!SDCARD_send_command(spi, CMD24, blocknum, response, 1))

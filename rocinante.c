@@ -736,20 +736,34 @@ int main()
     sleep_us(1500000);
     printf("Rocinante on Pico, %ld clock rate\n", clock_get_hz(clk_sys));
 
+    gpio_set_function(2, GPIO_FUNC_SPI);
+    gpio_set_function(3, GPIO_FUNC_SPI);
+    gpio_set_function(4, GPIO_FUNC_SPI);
+    gpio_set_function(5, GPIO_FUNC_SPI);
+
     spi_inst_t * spi = spi0;
     uint baudrate = spi_init(spi, 200000);
     printf("spi0 baud rate = %u\n", baudrate);
-    spi_set_format(spi, 8, 0, 0, SPI_MSB_FIRST);
+    spi_set_format(spi, 8, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
 
-    SDCARD_init(spi);
-
-    static uint8_t block[SD_BLOCK_SIZE];
-    SDCARD_readblock(spi, 0, block);
-    for(int i = 0 ; i < SD_BLOCK_SIZE; i++)
+    int success = SDCARD_init(spi);
+    if(!success)
     {
-        printf("%02X ", block[i]);
+        printf("couldn't open SD\n");
+        for(;;);
     }
-    printf("\n");
+    printf("opened SD!\n");
+
+    if(true)
+    {
+        static uint8_t block[SD_BLOCK_SIZE];
+        SDCARD_readblock(spi, 0, block);
+        for(int i = 0 ; i < SD_BLOCK_SIZE; i++)
+        {
+            printf("%02X ", block[i]);
+        }
+        printf("\n");
+    }
 
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
