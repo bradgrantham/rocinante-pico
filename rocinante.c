@@ -12,13 +12,17 @@
 #include "hardware/clocks.h"
 #include "hardware/irq.h"
 #include "hardware/pwm.h"
+#include "hardware/spi.h"
 #include "rocinante.pio.h"
 
 #include "byte_queue.h"
+#include "sd_spi.h"
+
 #include "rocinante.h"
 #include "ntsc-kit.h"
 #include "ntsc-kit-platform.h"
 #include "text-mode.h"
+
 
 extern void enqueue_serial_input(uint8_t c);
 
@@ -731,6 +735,21 @@ int main()
 
     sleep_us(1500000);
     printf("Rocinante on Pico, %ld clock rate\n", clock_get_hz(clk_sys));
+
+    spi_inst_t * spi = spi0;
+    uint baudrate = spi_init(spi, 200000);
+    printf("spi0 baud rate = %u\n", baudrate);
+    spi_set_format(spi, 8, 0, 0, SPI_MSB_FIRST);
+
+    SDCARD_init(spi);
+
+    static uint8_t block[SD_BLOCK_SIZE];
+    SDCARD_readblock(spi, 0, block);
+    for(int i = 0 ; i < SD_BLOCK_SIZE; i++)
+    {
+        printf("%02X ", block[i]);
+    }
+    printf("\n");
 
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
