@@ -36,6 +36,11 @@ const uint AUDIO_PIN = 28;
 const uint32_t NTSC_PIN_BASE = 8;
 const uint32_t NTSC_PIN_COUNT = 8;
 
+#define SD_SCK 2
+#define SD_MOSI 3
+#define SD_MISO 4
+#define SD_CS 5
+
 enum {
     CORE1_OPERATION_SUCCEEDED = 1,
     CORE1_ENABLE_VIDEO_ISR,
@@ -764,6 +769,18 @@ void display_test_image()
     printf("\007\n");
 }
 
+void spi_enable_cs()
+{
+    gpio_put(SD_CS, 0);
+    RoDelayMillis(1);
+}
+
+void spi_disable_cs()
+{
+    gpio_put(SD_CS, 1);
+    RoDelayMillis(1);
+}
+
 extern void set_ff_spi_inst(spi_inst_t *spi);
 
 int main()
@@ -796,13 +813,22 @@ int main()
     sleep_us(1500000);
     printf("Rocinante on Pico, %ld clock rate\n", clock_get_hz(clk_sys));
 
-    gpio_set_function(2, GPIO_FUNC_SPI);
-    gpio_set_function(3, GPIO_FUNC_SPI);
-    gpio_set_function(4, GPIO_FUNC_SPI);
-    gpio_set_function(5, GPIO_FUNC_SPI);
+    gpio_set_function(SD_SCK, GPIO_FUNC_SPI);
+    gpio_set_function(SD_MOSI, GPIO_FUNC_SPI);
+    gpio_set_function(SD_MISO, GPIO_FUNC_SPI);
+    // gpio_set_function(SD_CS, GPIO_FUNC_SPI);
+
+    gpio_set_slew_rate(SD_SCK, GPIO_SLEW_RATE_FAST);
+    gpio_set_drive_strength(SD_SCK, GPIO_DRIVE_STRENGTH_12MA);
+    gpio_set_slew_rate(SD_MOSI, GPIO_SLEW_RATE_FAST);
+    gpio_set_drive_strength(SD_MOSI, GPIO_DRIVE_STRENGTH_12MA);
+
+    gpio_init(SD_CS);
+    gpio_set_dir(SD_CS, GPIO_OUT);
+    spi_disable_cs();
 
     spi_inst_t * spi = spi0;
-    uint baudrate = spi_init(spi, 200000);
+    uint baudrate = spi_init(spi, 400000);
     printf("spi0 baud rate = %u\n", baudrate);
     spi_set_format(spi, 8, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
     set_ff_spi_inst(spi);
@@ -815,20 +841,35 @@ int main()
     }
     printf("opened SD!\n");
 
-    if(false)
+    if(true)
     {
         static uint8_t block[SD_BLOCK_SIZE];
-        SDCARD_readblock(spi, 0, block);
-        for(int i = 0 ; i < SD_BLOCK_SIZE; i++)
+        for(int i = 0; i < 16; i++)
         {
-            printf("%02X ", block[i]);
+            success = SDCARD_readblock(spi, i, block);
+            if(!success)
+            {
+                printf("Couldn't read block %d...\n", i);
+                for(;;);
+            }
+            for(int i = 0 ; i < SD_BLOCK_SIZE; i++)
+            {
+                if((i % 16) == 0)
+                {
+                    printf("%04X : ", i);
+                }
+                printf("%02X%c", block[i], ((i % 16) == 15) ? '\n' : ' ');
+            }
+            printf("\n");
+            printf("Succeeded reading block %d!\n", i);
         }
-        printf("\n");
     }
 
     if(true)
     {
         static FATFS gFATVolume;
+        gpio_put(SD_CS, 0);
+        RoDelayMillis(1);
         FRESULT result = f_mount(&gFATVolume, "0:", 1);
         if(result != FR_OK) {
             printf("ERROR: FATFS mount result is %d\n", result);

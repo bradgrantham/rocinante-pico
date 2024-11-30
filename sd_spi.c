@@ -36,6 +36,8 @@ void logprintf(int level, char *fmt, ...)
 
 /*--------------------------------------------------------------------------*/
 /* SD card -----------------------------------------------------------------*/
+extern void spi_enable_cs();
+extern void spi_disable_cs();
 
 int gSDCardTimeoutMillis = 1000;
 
@@ -69,8 +71,8 @@ int SDCARD_send_command(spi_inst_t *spi, enum SDCardCommand command, unsigned lo
     command_buffer[4] = (parameter >> 0) & 0xff;
     command_buffer[5] = ((crc7_generate_bytes(command_buffer, 5) & 0x7f) << 1) | 0x01;
 
-    logprintf(DEBUG_DATA, "command constructed: %02X %02X %02X %02X %02X %02X\n",
-        command_buffer[0], command_buffer[1], command_buffer[2],
+    logprintf(DEBUG_DATA, "command %d constructed: %02X %02X %02X %02X %02X %02X\n",
+        command_buffer[0] & 0x3F, command_buffer[0], command_buffer[1], command_buffer[2],
         command_buffer[3], command_buffer[4], command_buffer[5]);
 
     spi_write_read_blocking(spi, command_buffer, command_buffer_read, sizeof(command_buffer));
@@ -104,13 +106,14 @@ int SDCARD_init(spi_inst_t *spi)
     static unsigned char response[8];
     unsigned long OCR;
 
+    spi_disable_cs();
     /* CS false, 80 clk pulses (read 10 bytes) */
     static unsigned char buffer[10];
     for(unsigned int u = 0; u < sizeof(buffer); u++)
         buffer[u] = 0xff;
     spi_write_blocking(spi, buffer, sizeof(buffer));
 
-    RoDelayMillis(100);
+    spi_enable_cs();
     /* interface init */
     if(!SDCARD_send_command(spi, CMD0, 0, response, 1))
         return 0;
@@ -155,7 +158,7 @@ int SDCARD_init(spi_inst_t *spi)
 
     // After init, we should be able to set the clock as
     // high as 25MHz.
-    spi_set_baudrate(spi, 1000000);
+    spi_set_baudrate(spi, 25000000);
 
     return 1;
 }
