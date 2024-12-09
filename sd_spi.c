@@ -14,7 +14,7 @@ enum DebugLevels {
     DEBUG_ALL,
     DEBUG_INSANE = 99,
 };
-int gDebugLevel = DEBUG_DATA;
+int gDebugLevel = DEBUG_WARNINGS;
 
 void logprintf(int level, char *fmt, ...)
 {
@@ -40,6 +40,7 @@ extern void spi_enable_cs();
 extern void spi_disable_cs();
 
 int gSDCardTimeoutMillis = 1000;
+const unsigned char gSPIReadDummy = 0xFF;
 
 // cribbed somewhat from http://elm-chan.org/docs/mmc/mmc_e.html
 enum SDCardCommand {
@@ -61,8 +62,8 @@ int SDCARD_send_command(spi_inst_t *spi, enum SDCardCommand command, unsigned lo
     static unsigned char command_buffer[6];
     static unsigned char command_buffer_read[6];
 
-    command_buffer[0] = 0xff;
-    spi_write_blocking(spi, command_buffer, 1);
+    // command_buffer[0] = 0xff;
+    // spi_write_blocking(spi, command_buffer, 1);
 
     command_buffer[0] = 0x40 | command;
     command_buffer[1] = (parameter >> 24) & 0xff;
@@ -88,12 +89,12 @@ int SDCARD_send_command(spi_inst_t *spi, enum SDCardCommand command, unsigned lo
             panic("SD timeout");
         }
         response[0] = 0xff;
-        spi_read_blocking(spi, 0, response, 1);
+        spi_read_blocking(spi, gSPIReadDummy, response, 1);
         logprintf(DEBUG_ALL, "response 0x%02X\n", response[0]);
     } while(response[0] & 0x80);
 
     if(response_length > 1) {
-        spi_read_blocking(spi, 0, response + 1, response_length - 1);
+        spi_read_blocking(spi, gSPIReadDummy, response + 1, response_length - 1);
     }
 
     return 1;
@@ -140,7 +141,7 @@ int SDCARD_init(spi_inst_t *spi)
     do {
         int now = RoGetMillis();
         if(now - then > gSDCardTimeoutMillis) {
-            printf("SDCARD_init: timed out waiting on transition to ACMD41\n");
+            logprintf(DEBUG_ERRORS, "SDCARD_init: timed out waiting on transition to ACMD41\n");
             return 0;
         }
         /* leading command to the ACMD41 command */
@@ -166,7 +167,7 @@ int SDCARD_init(spi_inst_t *spi)
 void dump_more_spi_bytes(spi_inst_t *spi, const char *why)
 {
     static unsigned char response[8];
-    spi_read_blocking(spi, 0, response, sizeof(response));
+    spi_read_blocking(spi, gSPIReadDummy, response, sizeof(response));
     printf("trailing %s: %02X %02X %02X %02X %02X %02X %02X %02X\n", why,
         response[0], response[1], response[2], response[3],
         response[4], response[5], response[6], response[7]);
@@ -194,15 +195,15 @@ int SDCARD_readblock(spi_inst_t *spi, unsigned int blocknum, unsigned char *bloc
             logprintf(DEBUG_ERRORS, "SDCARD_readblock: timed out waiting for data token\n");
             return 0;
         }
-        spi_read_blocking(spi, 0, response, 1);
+        spi_read_blocking(spi, gSPIReadDummy, response, 1);
         logprintf(DEBUG_ALL, "readblock response 0x%02X\n", response[0]);
     } while(response[0] != gSDCardToken_17_18_24);
 
     // Read data.
-    spi_read_blocking(spi, 0, block, SD_BLOCK_SIZE);
+    spi_read_blocking(spi, gSPIReadDummy, block, SD_BLOCK_SIZE);
 
     // Read CRC
-    spi_read_blocking(spi, 0, response, 2);
+    spi_read_blocking(spi, gSPIReadDummy, response, 2);
     logprintf(DEBUG_DATA, "CRC is 0x%02X%02X\n", response[0], response[1]);
 
     unsigned short crc_theirs = response[0] * 256 + response[1];
@@ -226,7 +227,7 @@ int SDCARD_readblock(spi_inst_t *spi, unsigned int blocknum, unsigned char *bloc
             logprintf(DEBUG_ERRORS, "SDCARD_readblock: timed out waiting on completion\n");
             return 0;
         }
-        spi_read_blocking(spi, 0, response, 1);
+        spi_read_blocking(spi, gSPIReadDummy, response, 1);
         logprintf(DEBUG_ALL, "readblock response 0x%02X\n", response[0]);
     } while(response[0] != 0xFF);
 
@@ -263,7 +264,7 @@ int SDCARD_writeblock(spi_inst_t *spi, unsigned int blocknum, const unsigned cha
     spi_write_blocking(spi, response, 2);
 
     // Get DATA_ACCEPTED response from WRITE
-    spi_read_blocking(spi, 0, response, 1);
+    spi_read_blocking(spi, gSPIReadDummy, response, 1);
     logprintf(DEBUG_DATA, "writeblock response 0x%02X\n", response[0]);
     if(response[0] != gSDCardResponseDATA_ACCEPTED) {
         logprintf(DEBUG_ERRORS, "SDCARD_writeblock: failed to respond with DATA_ACCEPTED, response was 0x%02X\n", response[0]);
@@ -279,7 +280,7 @@ int SDCARD_writeblock(spi_inst_t *spi, unsigned int blocknum, const unsigned cha
             logprintf(DEBUG_ERRORS, "SDCARD_writeblock: timed out waiting on completion\n");
             panic("SD timeout");
         }
-        spi_read_blocking(spi, 0, response, 1);
+        spi_read_blocking(spi, gSPIReadDummy, response, 1);
         logprintf(DEBUG_ALL, "writeblock completion 0x%02X\n", response[0]);
         count++;
     } while(response[0] != 0xFF);
