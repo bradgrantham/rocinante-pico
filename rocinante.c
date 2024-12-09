@@ -439,7 +439,6 @@ int RoDoHousekeeping(void)
     int c;
     // while((c = getchar_timeout_us(0)) != -1) {
     if((c = getchar_timeout_us(0)) != PICO_ERROR_TIMEOUT) {
-        printf("%d\n", c);
         enqueue_serial_input(c);
     }
     return 0;
@@ -553,6 +552,15 @@ uint8_t RoGetKeypadState(RoControllerIndex which)
 
     // HAL_Delay(1);
     return keypad_value;
+}
+
+char *RoGetClipboardString()
+{
+    return NULL;
+}
+
+void RoSetClipboardString([[maybe_unused]] char *str)
+{
 }
 
 Status RoFillFilenameList(const char* dirName, uint32_t flags, const char* optionalFilterSuffix, size_t maxNames, char **filenames, size_t* filenamesSize)
@@ -704,9 +712,6 @@ void TestControllers()
     }
 }
 
-int launcher_main(int argc, const char **argv);
-int coleco_main(int argc, const char **argv);
-
 extern void DoATest();
 
 // https://stackoverflow.com/a/34571089/211234
@@ -747,7 +752,7 @@ void display_test_image()
     const int height = 240;
     const int comp = 1;
     uint8_t img[20 + width * height * comp];
-    uint8_t *p = img + sprintf(img, "%s %d %d 255\n", (comp == 1) ? "P5" : "P6", width, height);
+    uint8_t *p = img + sprintf((char*)img, "%s %d %d 255\n", (comp == 1) ? "P5" : "P6", width, height);
     for(int y = 0; y < height; y++)
     {
         for(int x = 0; x < width; x++)
@@ -771,17 +776,24 @@ void display_test_image()
 
 void spi_enable_cs()
 {
+    printf("enable SPI CS\n");
     gpio_put(SD_CS, 0);
     RoDelayMillis(1);
 }
 
 void spi_disable_cs()
 {
+    printf("disable SPI CS\n");
     gpio_put(SD_CS, 1);
     RoDelayMillis(1);
 }
 
 extern void set_ff_spi_inst(spi_inst_t *spi);
+
+int launcher_main(int argc, const char **argv);
+int coleco_main(int argc, const char **argv);
+int apple2_main(int argc, const char **argv);
+int simple_apple2_main(int argc, const char **argv);
 
 int main()
 {
@@ -807,6 +819,9 @@ int main()
     const uint32_t requested_rate = 262000000; // 250000000; // 133000000;
     set_sys_clock_hz(requested_rate, 1);
 
+    gpio_init(LED_PIN);
+    gpio_set_dir(LED_PIN, GPIO_OUT);
+
     stdio_init_all();
     uart_setup();
 
@@ -814,17 +829,24 @@ int main()
     printf("Rocinante on Pico, %ld clock rate\n", clock_get_hz(clk_sys));
 
     gpio_set_function(SD_SCK, GPIO_FUNC_SPI);
-    gpio_set_function(SD_MOSI, GPIO_FUNC_SPI);
-    gpio_set_function(SD_MISO, GPIO_FUNC_SPI);
-    // gpio_set_function(SD_CS, GPIO_FUNC_SPI);
-
     gpio_set_slew_rate(SD_SCK, GPIO_SLEW_RATE_FAST);
     gpio_set_drive_strength(SD_SCK, GPIO_DRIVE_STRENGTH_12MA);
+    gpio_disable_pulls(SD_SCK);
+
+    gpio_set_function(SD_MOSI, GPIO_FUNC_SPI);
     gpio_set_slew_rate(SD_MOSI, GPIO_SLEW_RATE_FAST);
     gpio_set_drive_strength(SD_MOSI, GPIO_DRIVE_STRENGTH_12MA);
+    gpio_disable_pulls(SD_MOSI);
 
+    gpio_set_function(SD_MISO, GPIO_FUNC_SPI);
+    gpio_disable_pulls(SD_MISO);
+
+    // gpio_set_function(SD_CS, GPIO_FUNC_SPI);
     gpio_init(SD_CS);
     gpio_set_dir(SD_CS, GPIO_OUT);
+    gpio_set_drive_strength(SD_CS, GPIO_DRIVE_STRENGTH_12MA);
+    gpio_disable_pulls(SD_CS);
+
     spi_disable_cs();
 
     spi_inst_t * spi = spi0;
@@ -836,15 +858,14 @@ int main()
     int success = SDCARD_init(spi);
     if(!success)
     {
-        printf("couldn't open SD\n");
+        printf("couldn't initialize SD\n");
         for(;;);
     }
-    printf("opened SD!\n");
 
-    if(true)
+    if(false)
     {
         static uint8_t block[SD_BLOCK_SIZE];
-        for(int i = 0; i < 16; i++)
+        for(int i = 0; i < 4; i++)
         {
             success = SDCARD_readblock(spi, i, block);
             if(!success)
@@ -865,22 +886,16 @@ int main()
         }
     }
 
-    if(true)
-    {
-        static FATFS gFATVolume;
-        gpio_put(SD_CS, 0);
-        RoDelayMillis(1);
-        FRESULT result = f_mount(&gFATVolume, "0:", 1);
-        if(result != FR_OK) {
-            printf("ERROR: FATFS mount result is %d\n", result);
-            for(;;);
-        } else {
-            printf("Mounted FATFS from SD card successfully.\n");
-        }
+    static FATFS gFATVolume;
+    gpio_put(SD_CS, 0);
+    RoDelayMillis(1);
+    FRESULT result = f_mount(&gFATVolume, "0:", 1);
+    if(result != FR_OK) {
+        printf("ERROR: FATFS mount result is %d\n", result);
+        for(;;);
+    } else {
+        printf("Mounted FATFS from SD card successfully.\n");
     }
-
-    gpio_init(LED_PIN);
-    gpio_set_dir(LED_PIN, GPIO_OUT);
 
     multicore_launch_core1(core1_main);
 
@@ -927,9 +942,31 @@ int main()
     if(0)
     {
         const char *args[] = {
+            "simple-apple2e",
+            "apple2e.rom",
+        };
+        simple_apple2_main(sizeof(args) / sizeof(args[0]), args); /* doesn't return */
+    }
+
+    if(1)
+    {
+        const char *args[] = {
+            "apple2e",
+            "-diskII",
+            "diskII.c600.c6ff.bin",
+            "floppies/LodeRunner.dsk",
+            "-",
+            "apple2e.rom",
+        };
+        apple2_main(sizeof(args) / sizeof(args[0]), args); /* doesn't return */
+    }
+
+    if(0)
+    {
+        const char *args[] = {
             "emulator",
             "coleco/COLECO.ROM",
-            "smurf.col", // "zaxxon.col",
+            "coleco/BurgerTime (1984 Coleco).rom", 
         };
         coleco_main(sizeof(args) / sizeof(args[0]), args); /* doesn't return */
     }
