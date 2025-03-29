@@ -948,7 +948,7 @@ int main()
         simple_apple2_main(sizeof(args) / sizeof(args[0]), args); /* doesn't return */
     }
 
-    if(1)
+    if(0)
     {
         const char *args[] = {
             "apple2e",
