@@ -29,3 +29,4 @@ pico_add_extra_outputs(rocinante)
 
 target_link_libraries(rocinante pico_platform pico_stdlib pico_divider pico_multicore pico_bootsel_via_double_reset hardware_pio hardware_dma hardware_adc hardware_irq hardware_clocks hardware_pll hardware_pwm hardware_spi)
 
+add_compile_options(-Wstack-usage=4096)
