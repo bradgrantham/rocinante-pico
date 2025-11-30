@@ -444,7 +444,7 @@ int RoDoHousekeeping(void)
     return 0;
 }
 
-const uint32_t JOYSTICK_KEYSELECT_PIN = 16;
+const uint32_t JOYSTICK_KEYSELECT_PIN = 27;
 const uint32_t JOYSTICK_JOYSELECT_PIN = 17;
 const uint32_t JOYSTICK_NORTH_PIN = 18;
 const uint32_t JOYSTICK_SOUTH_PIN = 19;
