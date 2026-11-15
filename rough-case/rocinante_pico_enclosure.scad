@@ -13,10 +13,11 @@
 part = "assembly";   // "assembly", "lid", "base", "coupon"
 
 /* [Board footprint (everything that sits on the base)] */
-board_w   = 172;  // left-right, including the perfboard overhang
-board_d   = 84;   // front-back
+board_w   = 180;  // left-right, measured
+board_d   = 85;   // front-back, measured
 margin    = 6;    // free space around the footprint (>= 6 so corner bosses clear)
-inner_h   = 40;   // floor to underside of lid top; must clear the tallest jumper loop
+board_t   = 10;   // breadboard thickness
+inner_h   = 62;   // floor to underside of lid top: 10 board + 50 wires + 2 spare
 
 /* [Shell] */
 wall      = 2.4;
@@ -26,14 +27,14 @@ corner_r  = 3;
 fit       = 0.3;  // clearance between base lip and lid walls
 
 /* [Micro-USB slot, back wall] */
-usb_x     = 91;   // from LEFT edge of board footprint to centre of the Pico's USB jack
-usb_z     = 14.5; // floor to centre of USB jack (breadboard ~9.5 + header 2.5 + PCB 1 + 1.5)
+usb_x     = 95;   // from LEFT edge of board footprint to centre of the Pico's USB jack
+usb_z     = 15;   // floor to centre of USB jack (breadboard 10 + header 2.5 + PCB 1 + 1.5)
 usb_w     = 14;   // slot must pass the cable's overmold, not just the metal plug
 usb_h     = 9.5;
 
 /* [RCA jacks, left wall] */
-rca_d       = 6.5;  // 6.35 mm (1/4") threaded panel jacks; use ~8.5 or ~9.5 for larger ones
-rca_spacing = 22;   // centre to centre (video / audio)
+rca_d       = 9.7;  // 9.32 mm measured thread + clearance
+rca_spacing = 22;   // centre to centre (video / audio); nut/flange is 12.1 mm
 rca_y_off   = 0;    // shift the pair toward the back (+) or front (-)
 rca_z       = 26;   // floor to centre
 
@@ -46,9 +47,16 @@ de9_hole_sp = 24.99; // standard D-sub size-E mounting hole spacing
 de9_hole_d  = 3.2;   // clearance for 4-40 / M3
 
 /* [Reset button, lid top] */
-reset_d   = 7.2;  // 7 mm threaded momentary button; 12.2 for a 12 mm one
-reset_x   = 45;   // from the RIGHT outer edge
+// Both sit over the empty right-hand end of the breadboard: the button reaches
+// 16.5 mm and the LED 15 mm below the lid, which is lower than the tallest wires.
+reset_d   = 7.2;  // 6.82 mm measured thread + clearance
+reset_x   = 28;   // from the RIGHT outer edge
 reset_y   = 25;   // from the FRONT outer edge
+
+/* [Panel LED, lid top] */
+led_d     = 6.3;  // 5.89 mm measured thread + clearance
+led_x     = 28;   // from the RIGHT outer edge
+led_y     = 50;   // from the FRONT outer edge
 
 /* [Screws] */
 boss_d     = 7.5;
@@ -114,6 +122,8 @@ module lid() {
             linear_extrude(wall + 2) de9_2d();
         // reset button, top
         translate([ow - reset_x, reset_y, inner_h - 1]) cylinder(d = reset_d, h = top_t + 2);
+        // panel LED, top
+        translate([ow - led_x, led_y, inner_h - 1]) cylinder(d = led_d, h = top_t + 2);
     }
 }
 
@@ -146,8 +156,9 @@ module coupon() {
         translate([22, 28]) de9_2d();
         translate([22, 10]) square([usb_w, usb_h], center = true);
         translate([62, 12]) rca_2d();
-        translate([62, 32]) circle(d = reset_d);
-        translate([88, 22]) circle(d = pilot_d);
+        translate([62, 33]) circle(d = reset_d);
+        translate([80, 33]) circle(d = led_d);
+        translate([92, 12]) circle(d = pilot_d);
     }
 }
 
@@ -158,5 +169,5 @@ else {
     color("SteelBlue") base();
     color("Gainsboro", 0.6) lid();
     // ghost of the board footprint
-    %translate([wall+margin, wall+margin, 0]) cube([board_w, board_d, 9.5]);
+    %translate([wall+margin, wall+margin, 0]) cube([board_w, board_d, board_t]);
 }
