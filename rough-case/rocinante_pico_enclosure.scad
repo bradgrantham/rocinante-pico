@@ -17,7 +17,7 @@ board_w   = 180;  // left-right, measured
 board_d   = 85;   // front-back, measured
 margin    = 6;    // free space around the footprint (>= 6 so corner bosses clear)
 board_t   = 10;   // breadboard thickness
-inner_h   = 62;   // floor to underside of lid top: 10 board + 50 wires + 2 spare
+inner_h   = 50;   // floor to underside of lid top: 10 board + 40 above it
 
 /* [Shell] */
 wall      = 2.4;
