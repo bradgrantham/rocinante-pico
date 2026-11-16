@@ -36,11 +36,11 @@ usb_h     = 9.5;
 rca_d       = 9.7;  // 9.32 mm measured thread + clearance
 rca_spacing = 22;   // centre to centre (video / audio); nut/flange is 12.1 mm
 rca_y_off   = 0;    // shift the pair toward the back (+) or front (-)
-rca_z       = inner_h - 10;  // centre 10 mm below the inside of the lid top
+rca_z       = inner_h - 20;  // centre 20 mm below the inside of the lid top
 
 /* [DE-9, front wall] */
 de9_x       = 36;    // centre, from the RIGHT outer edge (flange edge lands ~20 mm in)
-de9_z       = inner_h - 10;  // centre 10 mm below the inside of the lid top
+de9_z       = inner_h - 20;  // centre 20 mm below the inside of the lid top
 de9_cut_w   = 20.5;  // D opening, wide (top) edge
 de9_cut_h   = 11.4;
 de9_hole_sp = 24.99; // standard D-sub size-E mounting hole spacing
