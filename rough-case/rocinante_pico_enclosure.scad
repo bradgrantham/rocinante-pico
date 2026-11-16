@@ -36,27 +36,27 @@ usb_h     = 9.5;
 rca_d       = 9.7;  // 9.32 mm measured thread + clearance
 rca_spacing = 22;   // centre to centre (video / audio); nut/flange is 12.1 mm
 rca_y_off   = 0;    // shift the pair toward the back (+) or front (-)
-rca_z       = 26;   // floor to centre
+rca_z       = inner_h - 10;  // centre 10 mm below the inside of the lid top
 
-/* [DE-9, right wall] */
-de9_y_off   = 0;     // shift toward back (+) or front (-)
-de9_z       = 26;    // floor to centre
+/* [DE-9, front wall] */
+de9_x       = 36;    // centre, from the RIGHT outer edge (flange edge lands ~20 mm in)
+de9_z       = inner_h - 10;  // centre 10 mm below the inside of the lid top
 de9_cut_w   = 20.5;  // D opening, wide (top) edge
 de9_cut_h   = 11.4;
 de9_hole_sp = 24.99; // standard D-sub size-E mounting hole spacing
 de9_hole_d  = 3.2;   // clearance for 4-40 / M3
 
 /* [Reset button, lid top] */
-// Both sit over the empty right-hand end of the breadboard: the button reaches
-// 16.5 mm and the LED 15 mm below the lid, which is lower than the tallest wires.
+// Side by side near the middle, toward the front.  The button reaches 16.5 mm
+// and the LED 15 mm below the lid, which is lower than the tallest wires.
 reset_d   = 7.2;  // 6.82 mm measured thread + clearance
-reset_x   = 28;   // from the RIGHT outer edge
-reset_y   = 25;   // from the FRONT outer edge
+reset_x   = 10;   // right (+) or left (-) of the lid centre line
+reset_y   = 20;   // from the FRONT outer edge
 
 /* [Panel LED, lid top] */
 led_d     = 6.3;  // 5.89 mm measured thread + clearance
-led_x     = 28;   // from the RIGHT outer edge
-led_y     = 50;   // from the FRONT outer edge
+led_x     = -10;  // right (+) or left (-) of the lid centre line
+led_y     = 20;   // from the FRONT outer edge
 
 /* [Screws] */
 boss_d     = 7.5;
@@ -117,13 +117,13 @@ module lid() {
         // RCA, left wall (as seen from outside, width runs along -Y; symmetric so no matter)
         translate([-1, od/2 + rca_y_off, rca_z]) rotate([90, 0, 90])
             linear_extrude(wall + 2) rca_2d();
-        // DE-9, right wall
-        translate([ow - wall - 1, od/2 + de9_y_off, de9_z]) rotate([90, 0, 90])
+        // DE-9, front wall
+        translate([ow - de9_x, wall + 1, de9_z]) rotate([90, 0, 0])
             linear_extrude(wall + 2) de9_2d();
         // reset button, top
-        translate([ow - reset_x, reset_y, inner_h - 1]) cylinder(d = reset_d, h = top_t + 2);
+        translate([ow/2 + reset_x, reset_y, inner_h - 1]) cylinder(d = reset_d, h = top_t + 2);
         // panel LED, top
-        translate([ow - led_x, led_y, inner_h - 1]) cylinder(d = led_d, h = top_t + 2);
+        translate([ow/2 + led_x, led_y, inner_h - 1]) cylinder(d = led_d, h = top_t + 2);
     }
 }
 
