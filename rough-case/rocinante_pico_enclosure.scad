@@ -58,6 +58,14 @@ led_d     = 6.3;  // 5.89 mm measured thread + clearance
 led_x     = -10;  // right (+) or left (-) of the lid centre line
 led_y     = 20;   // from the FRONT outer edge
 
+/* [D-pad and fire buttons, lid top, toward the back] */
+pad_d      = 7.2;  // same 6.82 mm threaded buttons as reset
+pad_x      = 45;   // d-pad centre, from the LEFT outer edge
+pad_y      = 35;   // d-pad centre, from the BACK outer edge
+pad_r      = 14;   // centre of the cross to each direction button
+fire_x     = 45;   // fire button, from the RIGHT outer edge
+fire_y     = 35;   // fire button, from the BACK outer edge
+
 /* [Screws] */
 boss_d     = 7.5;
 pilot_d    = 2.5;  // M3 self-tapping into plastic
@@ -122,6 +130,11 @@ module lid() {
             linear_extrude(wall + 2) de9_2d();
         // reset button, top
         translate([ow/2 + reset_x, reset_y, inner_h - 1]) cylinder(d = reset_d, h = top_t + 2);
+        // d-pad (N toward the back, S toward the front, W left, E right) and fire
+        for (o = [[0, pad_r], [0, -pad_r], [-pad_r, 0], [pad_r, 0]])
+            translate([pad_x + o[0], od - pad_y + o[1], inner_h - 1])
+                cylinder(d = pad_d, h = top_t + 2);
+        translate([ow - fire_x, od - fire_y, inner_h - 1]) cylinder(d = pad_d, h = top_t + 2);
         // panel LED, top
         translate([ow/2 + led_x, led_y, inner_h - 1]) cylinder(d = led_d, h = top_t + 2);
     }
