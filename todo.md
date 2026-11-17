@@ -10,6 +10,10 @@
     pulls disabled, and times the rise. Needs a platform call to return the
     values and per-unit calibration.
 - [ ] **Audio**: upgrade the mono audio output (currently 8-bit PWM on GP28).
+- [ ] **Lid d-pad**: after the audio upgrade, wire the four direction buttons
+  and the fire button on the lid. Each button goes from its data line
+  (GP18 N, GP19 S, GP20 W, GP21 E, GP22 fire) through a series diode to the
+  joystick select line (GP17), anode on the data-line side.
 
 ## Later
 
