@@ -14,6 +14,10 @@
   and the fire button on the lid. Each button goes from its data line
   (GP18 N, GP19 S, GP20 W, GP21 E, GP22 fire) through a series diode to the
   joystick select line (GP17), anode on the data-line side.
+- [ ] **Panel LED**: wire the lid LED to a spare GPIO (GP6 or GP7) through
+  ~330 ohm, cathode to ground, and mirror the on-board LED heartbeat on it:
+  initialise the pin next to `LED_PIN` and add a second `gpio_put` where
+  `rocinante.c` blinks GP25. Test with a regular LED first.
 
 ## Later
 
