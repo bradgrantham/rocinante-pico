@@ -30,6 +30,7 @@ extern void enqueue_serial_input(uint8_t c);
 extern const uint8_t buffer[];
 
 const uint LED_PIN = 25;
+const uint PANEL_LED_PIN = 6;
 
 const uint AUDIO_PIN = 28;
 
@@ -799,6 +800,7 @@ int main()
 {
     bi_decl(bi_program_description("Rocinante on Pico."));
     bi_decl(bi_1pin_with_name(LED_PIN, "On-board LED"));
+    bi_decl(bi_1pin_with_name(PANEL_LED_PIN, "Panel LED"));
     bi_decl(bi_1pin_with_name(AUDIO_PIN, "Mono audio"));
     bi_decl(bi_1pin_with_name(NTSC_PIN_BASE + 0, "Composite bit 0"));
     bi_decl(bi_1pin_with_name(NTSC_PIN_BASE + 1, "Composite bit 1"));
@@ -821,6 +823,10 @@ int main()
 
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
+
+    gpio_init(PANEL_LED_PIN);
+    gpio_set_dir(PANEL_LED_PIN, GPIO_OUT);
+    gpio_set_drive_strength(PANEL_LED_PIN, GPIO_DRIVE_STRENGTH_8MA);
 
     stdio_init_all();
     uart_setup();
@@ -1003,6 +1009,7 @@ int main()
                 previous_frame = ntsc.frameNumber;
             }
             gpio_put(LED_PIN, (ntsc.frameNumber % 30) < 15);
+            gpio_put(PANEL_LED_PIN, (ntsc.frameNumber % 30) < 15);
         }
     }
 
