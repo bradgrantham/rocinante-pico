@@ -1015,6 +1015,10 @@ int main()
 
     // TestControllers();
 
+    // Everything is initialised; light the LEDs to show we're up.
+    gpio_put(LED_PIN, 1);
+    gpio_put(PANEL_LED_PIN, 1);
+
     {
         const char *args[] = {
             "launcher",
