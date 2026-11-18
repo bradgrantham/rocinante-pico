@@ -2,7 +2,7 @@
 
 ## Before closing up the case
 
-- [ ] **Panel LED**: wire the lid LED (circa-1985 green) to a spare GPIO
+- [x] **Panel LED**: wire the lid LED (circa-1985 green) to a spare GPIO
   (GP6 or GP7) through 150-330 ohm, cathode to ground, and mirror the
   on-board LED heartbeat on it: initialise the pin next to `LED_PIN` and add
   a second `gpio_put` where `rocinante.c` blinks GP25. Test with a regular
