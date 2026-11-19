@@ -792,6 +792,7 @@ void spi_disable_cs()
 extern void set_ff_spi_inst(spi_inst_t *spi);
 
 int launcher_main(int argc, const char **argv);
+int joystick_test_main(int argc, const char **argv);
 int coleco_main(int argc, const char **argv);
 int apple2_main(int argc, const char **argv);
 int simple_apple2_main(int argc, const char **argv);
@@ -1018,6 +1019,16 @@ int main()
     // Everything is initialised; light the LEDs to show we're up.
     gpio_put(LED_PIN, 1);
     gpio_put(PANEL_LED_PIN, 1);
+
+    // Temporary: go straight to the joystick tester to check the lid buttons.
+    // It returns when fire is held for 3 seconds, then the launcher starts.
+    if(1)
+    {
+        const char *args[] = {
+            "joystick-test",
+        };
+        joystick_test_main(sizeof(args) / sizeof(args[0]), args);
+    }
 
     {
         const char *args[] = {
