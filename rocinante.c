@@ -445,6 +445,22 @@ int RoDoHousekeeping(void)
     return 0;
 }
 
+// DE-9 controller port.
+//
+// Pins 1-4 and 6 are the data lines (N, S, W, E, fire), pulled up and read
+// low when a switch closes to its common.
+//
+// Pin 8 is the common for the joystick switches and the supply return for
+// powered devices such as a wireless dongle.  It is grounded through an NPN
+// transistor switched by JOYSTICK_PIN8_GROUND_PIN (high = grounded).
+//
+// Pin 5 is the ColecoVision keypad common (and an Atari paddle pot), on
+// JOYSTICK_KEYSELECT_PIN through 1K, with 10nF from the GPIO to ground.
+//
+// The lid buttons are separate from the DE-9: each goes from its data line
+// through a diode to JOYSTICK_JOYSELECT_PIN, which is pulled low to read them.
+
+const uint32_t JOYSTICK_PIN8_GROUND_PIN = 16;
 const uint32_t JOYSTICK_KEYSELECT_PIN = 27;
 const uint32_t JOYSTICK_JOYSELECT_PIN = 17;
 const uint32_t JOYSTICK_NORTH_PIN = 18;
@@ -453,8 +469,18 @@ const uint32_t JOYSTICK_WEST_PIN = 20;
 const uint32_t JOYSTICK_EAST_PIN = 21;
 const uint32_t JOYSTICK_FIRE_PIN = 22;
 
+// Time for the data lines to settle after a common is switched
+#define CONTROLLER_SETTLE_US 10
+
+static RoControllerType controller_1_type = RO_CONTROLLER_ATARI_JOYSTICK;
+
 void InitializeControllerPins()
 {
+    // Atari joystick is the default: DE-9 pin 8 is held at ground
+    gpio_init(JOYSTICK_PIN8_GROUND_PIN);
+    gpio_put(JOYSTICK_PIN8_GROUND_PIN, 1);
+    gpio_set_dir(JOYSTICK_PIN8_GROUND_PIN, GPIO_OUT);
+
     // Set SELECT pins to high-impedance
     gpio_init(JOYSTICK_KEYSELECT_PIN);
     gpio_set_dir(JOYSTICK_KEYSELECT_PIN, GPIO_IN);
@@ -487,71 +513,105 @@ void InitializeControllerPins()
 
 }
 
-uint8_t RoGetJoystickState(RoControllerIndex which)
+Status RoSetControllerType(RoControllerIndex which, RoControllerType type)
 {
-    // Set select_joystick to RESET, which grounds joystick and fire-left switches
-    gpio_set_dir(JOYSTICK_JOYSELECT_PIN, GPIO_OUT);
-    gpio_put(JOYSTICK_JOYSELECT_PIN, 0);
-
-    sleep_us(10);
-
-    // read joystick and fire-left
-    unsigned int joystick_value = 0;
-    
-    switch(which) {
-        case CONTROLLER_1:
-            joystick_value = (
-                ((gpio_get(JOYSTICK_NORTH_PIN) ? 1 : 0) << 0) | 
-                ((gpio_get(JOYSTICK_EAST_PIN) ? 1 : 0) << 1) | 
-                ((gpio_get(JOYSTICK_SOUTH_PIN) ? 1 : 0) << 2) | 
-                ((gpio_get(JOYSTICK_WEST_PIN) ? 1 : 0) << 3) |
-                ((gpio_get(JOYSTICK_FIRE_PIN) ? 1 : 0) << 6)
-                ) ^ 0x4F;
-            break;
-
-        case CONTROLLER_2:
-            joystick_value = 0;
-            break;
+    // There is only one controller port
+    if(which != CONTROLLER_1) {
+        return RO_UNSUPPORTED;
     }
 
-    // set select_joystick to high-impedance
+    switch(type) {
+        case RO_CONTROLLER_ATARI_JOYSTICK:
+            // Pin 8 is always ground
+            gpio_put(JOYSTICK_PIN8_GROUND_PIN, 1);
+            break;
+
+        case RO_CONTROLLER_COLECOVISION:
+            // Pin 8 floats except while the joystick is being read, so the
+            // joystick switches don't show up in the keypad read
+            gpio_put(JOYSTICK_PIN8_GROUND_PIN, 0);
+            break;
+
+        default:
+            return RO_INVALID_PARAMETER_VALUE;
+    }
+
+    controller_1_type = type;
+    return RO_SUCCESS;
+}
+
+RoControllerType RoGetControllerType(RoControllerIndex which)
+{
+    return (which == CONTROLLER_1) ? controller_1_type : RO_CONTROLLER_ATARI_JOYSTICK;
+}
+
+// Read N, S, W, E, and fire into the CONTROLLER_*_BIT layout; a low line is a closed switch
+static uint8_t ReadControllerDataLines()
+{
+    return (
+        ((gpio_get(JOYSTICK_NORTH_PIN) ? 1 : 0) << 0) |
+        ((gpio_get(JOYSTICK_EAST_PIN) ? 1 : 0) << 1) |
+        ((gpio_get(JOYSTICK_SOUTH_PIN) ? 1 : 0) << 2) |
+        ((gpio_get(JOYSTICK_WEST_PIN) ? 1 : 0) << 3) |
+        ((gpio_get(JOYSTICK_FIRE_PIN) ? 1 : 0) << 6)
+        ) ^ 0x4F;
+}
+
+uint8_t RoGetJoystickState(RoControllerIndex which)
+{
+    if(which != CONTROLLER_1) {
+        return 0;
+    }
+
+    bool coleco = (controller_1_type == RO_CONTROLLER_COLECOVISION);
+
+    // Ground the lid buttons' common, and DE-9 pin 8 if it isn't already
+    gpio_set_dir(JOYSTICK_JOYSELECT_PIN, GPIO_OUT);
+    gpio_put(JOYSTICK_JOYSELECT_PIN, 0);
+    if(coleco) {
+        gpio_put(JOYSTICK_PIN8_GROUND_PIN, 1);
+    }
+
+    sleep_us(CONTROLLER_SETTLE_US);
+
+    uint8_t joystick_value = ReadControllerDataLines();
+
+    // Lid buttons' common back to high-impedance
     gpio_set_dir(JOYSTICK_JOYSELECT_PIN, GPIO_IN);
 
-    // HAL_Delay(1);
+    if(coleco) {
+        // Let pin 8 float again and give the data lines time to be pulled
+        // back up before a keypad read can follow
+        gpio_put(JOYSTICK_PIN8_GROUND_PIN, 0);
+        sleep_us(CONTROLLER_SETTLE_US);
+    }
+
     return joystick_value;
 }
 
 uint8_t RoGetKeypadState(RoControllerIndex which)
 {
-    // Set select_joystick to RESET, which grounds joystick and fire-left switches
-    gpio_set_dir(JOYSTICK_KEYSELECT_PIN, GPIO_OUT);
-    gpio_put(JOYSTICK_KEYSELECT_PIN, 0);
-
-    sleep_us(10);
-
-    // read joystick and fire-left
-    unsigned int keypad_value = 0;
-    
-    switch(which) {
-        case CONTROLLER_1:
-            keypad_value = (
-                ((gpio_get(JOYSTICK_NORTH_PIN) ? 1 : 0) << 0) | 
-                ((gpio_get(JOYSTICK_EAST_PIN) ? 1 : 0) << 1) | 
-                ((gpio_get(JOYSTICK_SOUTH_PIN) ? 1 : 0) << 2) | 
-                ((gpio_get(JOYSTICK_WEST_PIN) ? 1 : 0) << 3) |
-                ((gpio_get(JOYSTICK_FIRE_PIN) ? 1 : 0) << 6)
-                ) ^ 0x4F;
-            break;
-
-        case CONTROLLER_2:
-            keypad_value = 0;
-            break;
+    // Only a ColecoVision controller has a keypad and second fire button.
+    // For an Atari joystick pin 8 is always grounded, so a keypad read
+    // would just return the joystick again.
+    if((which != CONTROLLER_1) || (controller_1_type != RO_CONTROLLER_COLECOVISION)) {
+        return 0;
     }
 
-    // set select_joystick to high-impedance
+    // Ground the keypad and fire-right common
+    gpio_put(JOYSTICK_KEYSELECT_PIN, 0);
+    gpio_set_dir(JOYSTICK_KEYSELECT_PIN, GPIO_OUT);
+
+    sleep_us(CONTROLLER_SETTLE_US);
+
+    uint8_t keypad_value = ReadControllerDataLines();
+
+    // Drive the common high briefly before floating it; the pull-up alone
+    // is slow against the 10nF on this pin
+    gpio_put(JOYSTICK_KEYSELECT_PIN, 1);
+    sleep_us(CONTROLLER_SETTLE_US);
     gpio_set_dir(JOYSTICK_KEYSELECT_PIN, GPIO_IN);
 
-    // HAL_Delay(1);
     return keypad_value;
 }
 
@@ -811,6 +871,7 @@ int main()
     bi_decl(bi_1pin_with_name(NTSC_PIN_BASE + 5, "Composite bit 5"));
     bi_decl(bi_1pin_with_name(NTSC_PIN_BASE + 6, "Composite bit 6"));
     bi_decl(bi_1pin_with_name(NTSC_PIN_BASE + 7, "Composite bit 7"));
+    bi_decl(bi_1pin_with_name(JOYSTICK_PIN8_GROUND_PIN, "Controller pin 8 ground switch (high = grounded)"));
     bi_decl(bi_1pin_with_name(JOYSTICK_KEYSELECT_PIN, "Controller KEYSELECT (green) pin"));
     bi_decl(bi_1pin_with_name(JOYSTICK_JOYSELECT_PIN, "Controller JOYSELECT (gray) pin"));
     bi_decl(bi_1pin_with_name(JOYSTICK_NORTH_PIN, "Controller NORTH pin"));
